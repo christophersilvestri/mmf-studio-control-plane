@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
-import { agents as agentsTable, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable } from "@paperclipai/db";
+import { agents as agentsTable, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable, projectWorkspaces } from "@paperclipai/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import {
   agentSkillSyncSchema,
@@ -104,6 +104,7 @@ import { recoveryService } from "../services/recovery/service.js";
 import { resolveCoreTrustPreset } from "../services/trust-preset-resolver.js";
 import { readObject } from "../lib/objects.js";
 import { listInvalidOrgChainDescendantIds } from "../services/agent-invokability.js";
+import { getTrustedAgentTemplate } from "../services/agent-template-catalog.js";
 import {
   AGENT_PROFILE_CHANGE_CONSENT_FIELDS,
   agentInstructionsChangeTargetKey,
@@ -2354,25 +2355,135 @@ export function agentRoutes(
     res.json(state);
   });
 
+  function applyProjectTemplateVariables(value: unknown, project: { name: string }, workspaceCwd: string): unknown {
+    if (typeof value === "string") {
+      return value
+        .replaceAll("${PROJECT_NAME}", project.name)
+        .replaceAll("${PROJECT_WORKSPACE}", workspaceCwd);
+    }
+    if (Array.isArray(value)) return value.map((entry) => applyProjectTemplateVariables(entry, project, workspaceCwd));
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .map(([key, entry]) => [key, applyProjectTemplateVariables(entry, project, workspaceCwd)]),
+      );
+    }
+    return value;
+  }
+
+  async function expandTrustedTemplateHire(
+    req: Request,
+    companyId: string,
+    sourceIssueIds: string[],
+    actorAgent: NonNullable<Awaited<ReturnType<typeof svc.getById>>> | null,
+  ) {
+    const request = req.body as {
+      templateSlug: string;
+      projectId: string;
+      name?: string;
+      reportsTo?: string | null;
+    };
+    const template = await getTrustedAgentTemplate(request.templateSlug);
+    const project = await db
+      .select()
+      .from(projectsTable)
+      .where(and(eq(projectsTable.id, request.projectId), eq(projectsTable.companyId, companyId)))
+      .then((rows) => rows[0] ?? null);
+    if (!project) throw notFound("Project not found for trusted template hire");
+
+    if (sourceIssueIds.length === 0) {
+      throw unprocessable("Trusted template hires require a source issue");
+    }
+    const sourceIssues = await db
+      .select({ id: issuesTable.id, companyId: issuesTable.companyId, projectId: issuesTable.projectId })
+      .from(issuesTable)
+      .where(inArray(issuesTable.id, sourceIssueIds));
+    if (
+      sourceIssues.length !== sourceIssueIds.length
+      || sourceIssues.some((issue) => issue.companyId !== companyId || issue.projectId !== project.id)
+    ) {
+      throw unprocessable("Trusted template hire source issues must belong to the selected project and company");
+    }
+
+    const workspace = await db
+      .select()
+      .from(projectWorkspaces)
+      .where(and(eq(projectWorkspaces.projectId, project.id), eq(projectWorkspaces.isPrimary, true)))
+      .then((rows) => rows[0] ?? null);
+    if (template.requiresProjectWorkspace && (!workspace?.cwd || workspace.cwd.trim().length === 0)) {
+      throw unprocessable("Trusted template hire requires a primary project workspace with a local cwd");
+    }
+    const workspaceCwd = workspace?.cwd?.trim() ?? "";
+
+    const reportsTo = request.reportsTo ?? actorAgent?.id ?? null;
+    if (!reportsTo) throw unprocessable("Trusted template hire requires a reporting manager");
+    const manager = await svc.getById(reportsTo);
+    if (!manager || manager.companyId !== companyId) {
+      throw unprocessable("Trusted template hire reporting manager must belong to the same company");
+    }
+    if (!template.allowedParentRoles.includes(manager.role)) {
+      throw unprocessable(
+        `Template ${template.slug} must report to one of: ${template.allowedParentRoles.join(", ")}`,
+      );
+    }
+
+    const expandedTemplate = applyProjectTemplateVariables(template, project, workspaceCwd) as typeof template;
+    const candidate = {
+      name: request.name?.trim() || expandedTemplate.namePattern,
+      role: expandedTemplate.role,
+      title: expandedTemplate.title ?? expandedTemplate.name,
+      icon: expandedTemplate.icon ?? null,
+      reportsTo,
+      capabilities: expandedTemplate.capabilities ?? null,
+      adapterType: expandedTemplate.adapterType,
+      adapterConfig: expandedTemplate.adapterConfig,
+      runtimeConfig: expandedTemplate.runtimeConfig,
+      budgetMonthlyCents: expandedTemplate.budgetMonthlyCents,
+      permissions: expandedTemplate.permissions,
+      metadata: {
+        templateSlug: expandedTemplate.slug,
+        templateName: expandedTemplate.name,
+        projectId: project.id,
+        projectWorkspaceId: workspace?.id ?? null,
+        trustedTemplate: true,
+      },
+    };
+    const parsed = createAgentSchema.safeParse(candidate);
+    if (!parsed.success) {
+      throw unprocessable(`Trusted template ${template.slug} resolved to an invalid agent configuration: ${parsed.error.message}`);
+    }
+    return parsed.data;
+  }
+
   router.post("/companies/:companyId/agent-hires", validate(createAgentHireSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
-    await assertCanCreateAgentsForCompany(req, companyId);
+    const actorAgent = await assertCanCreateAgentsForCompany(req, companyId);
     const sourceIssueIds = parseSourceIssueIds(req.body);
+    const isTrustedTemplateHire = typeof req.body?.templateSlug === "string";
+    const resolvedBody = isTrustedTemplateHire
+      ? {
+          ...(await expandTrustedTemplateHire(req, companyId, sourceIssueIds, actorAgent)),
+          sourceIssueId: sourceIssueIds[0] ?? null,
+          sourceIssueIds,
+        }
+      : req.body;
     const {
       desiredSkills: requestedDesiredSkills,
       instructionsBundle,
       sourceIssueId: _sourceIssueId,
       sourceIssueIds: _sourceIssueIds,
       ...hireInput
-    } = req.body;
+    } = resolvedBody;
     hireInput.adapterType = assertKnownAdapterType(hireInput.adapterType);
     const rawHireAdapterConfig = (hireInput.adapterConfig ?? {}) as Record<string, unknown>;
     assertNoNewAgentLegacyPromptTemplate(
       hireInput.adapterType,
       rawHireAdapterConfig,
     );
-    assertNoAgentAdapterConfigMutation(req, rawHireAdapterConfig);
-    assertNoAgentRuntimeConfigAdapterConfigMutation(req, hireInput.runtimeConfig);
+    if (!isTrustedTemplateHire) {
+      assertNoAgentAdapterConfigMutation(req, rawHireAdapterConfig);
+      assertNoAgentRuntimeConfigAdapterConfigMutation(req, hireInput.runtimeConfig);
+    }
     const hiredAgentId = randomUUID();
     const requestedAdapterConfig = applyCodexLocalKeyIsolation(
       companyId,

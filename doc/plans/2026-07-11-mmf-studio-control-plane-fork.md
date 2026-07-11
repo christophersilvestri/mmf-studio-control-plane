@@ -1,7 +1,18 @@
 # MMF Studio Paperclip Fork — Implementation Plan
 
 Date: 2026-07-11
-Status: approved for implementation by user request
+Status: implemented and live-tested on isolated instance `mmf-studio-fork`
+
+## Verified outcome
+
+- Knowledge workspace UI creates `non_git_path` workspaces.
+- Trusted `templateSlug` hires resolve protected config server-side.
+- Legacy arbitrary instruction-path restrictions remain enforced.
+- MMF Studio Director submitted a `project-orchestrator` hire from minimal task context.
+- Malformed parser fallback was caught in E2E, fixed, and regression-tested.
+- Board approval activated a correctly configured Hermes Project Orchestrator.
+- Live branded UI verified at 1440×1000 in Playwright.
+- Tailnet-only test URL: `https://christophers-mac-mini-1.tail102d0b.ts.net:3110`.
 
 ## Problem frame
 
