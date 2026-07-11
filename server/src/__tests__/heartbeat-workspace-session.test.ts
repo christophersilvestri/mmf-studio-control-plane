@@ -436,6 +436,31 @@ describe("assertGitSensitiveAdapterWorkspaceValid", () => {
     );
   });
 
+  it("allows an explicitly non-Git knowledge workspace without .git metadata", async () => {
+    const input = buildWorkspaceValidationInput();
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-non-git-workspace-"));
+    try {
+      await expect(
+        assertGitSensitiveAdapterWorkspaceValid(
+          buildWorkspaceValidationInput({
+            resolvedWorkspace: buildResolvedWorkspace({ cwd, workspaceSourceType: "non_git_path" }),
+            executionWorkspace: {
+              ...input.executionWorkspace,
+              baseCwd: cwd,
+              cwd,
+            },
+            persistedExecutionWorkspace: {
+              ...input.persistedExecutionWorkspace!,
+              cwd,
+            },
+          }),
+        ),
+      ).resolves.toBeUndefined();
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("does not apply the git-sensitive workspace guard to non-local execution targets", async () => {
     const input = buildWorkspaceValidationInput();
 
