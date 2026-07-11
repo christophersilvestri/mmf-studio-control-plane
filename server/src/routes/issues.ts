@@ -8468,9 +8468,10 @@ export function issueRoutes(
         });
       };
 
-      if (executionStageWakeup) {
+      if (executionStageWakeup && !assigneeChanged) {
         addWakeup(executionStageWakeup.agentId, executionStageWakeup.wakeup);
-      } else if (assigneeChanged && issue.assigneeAgentId && issue.status !== "backlog") {
+      }
+      if (assigneeChanged && issue.assigneeAgentId && issue.status !== "backlog") {
         addWakeup(issue.assigneeAgentId, {
           source: "assignment",
           triggerDetail: "system",
