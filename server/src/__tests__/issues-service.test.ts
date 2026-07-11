@@ -3574,17 +3574,19 @@ describeEmbeddedPostgres("issueService blockers and dependency wake readiness", 
     const blockerA = randomUUID();
     const blockerB = randomUUID();
     const blockedIssueId = randomUUID();
+    const ordinaryBacklogChildId = randomUUID();
+    await db.insert(issues).values({
+      id: blockedIssueId,
+      companyId,
+      title: "Blocked setup parent",
+      status: "blocked",
+      priority: "medium",
+      assigneeAgentId,
+    });
     await db.insert(issues).values([
-      { id: blockerA, companyId, title: "Blocker A", status: "done", priority: "medium" },
-      { id: blockerB, companyId, title: "Blocker B", status: "todo", priority: "medium" },
-      {
-        id: blockedIssueId,
-        companyId,
-        title: "Blocked issue",
-        status: "blocked",
-        priority: "medium",
-        assigneeAgentId,
-      },
+      { id: blockerA, companyId, parentId: blockedIssueId, title: "Hire gate A", status: "done", priority: "medium" },
+      { id: blockerB, companyId, parentId: blockedIssueId, title: "Hire gate B", status: "todo", priority: "medium" },
+      { id: ordinaryBacklogChildId, companyId, parentId: blockedIssueId, title: "Scoped activity", status: "backlog", priority: "medium" },
     ]);
 
     await svc.update(blockedIssueId, { blockedByIssueIds: [blockerA, blockerB] });

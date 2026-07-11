@@ -202,6 +202,89 @@ describe("approval routes idempotent retries", () => {
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
+  it("wakes the requester on the actionable linked issue it owns instead of the first linked issue", async () => {
+    const approval = {
+      id: "approval-primary-selection",
+      companyId: "company-1",
+      type: "hire_agent",
+      status: "approved",
+      payload: {},
+      requestedByAgentId: "agent-1",
+    };
+    mockApprovalService.getById.mockResolvedValue({ ...approval, status: "pending" });
+    mockApprovalService.approve.mockResolvedValue({ approval, applied: true });
+    mockIssueApprovalService.listIssuesForApproval.mockResolvedValue([
+      { id: "parent-issue", status: "blocked", assigneeAgentId: "orchestrator-agent" },
+      { id: "hire-review-child", status: "in_review", assigneeAgentId: "agent-1" },
+    ]);
+
+    const res = await request(await createApp())
+      .post(`/api/approvals/${approval.id}/approve`)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
+      "agent-1",
+      expect.objectContaining({
+        reason: "approval_approved",
+        payload: expect.objectContaining({ issueId: "hire-review-child" }),
+        contextSnapshot: expect.objectContaining({ taskId: "hire-review-child" }),
+      }),
+    );
+  });
+
+  it("wakes the requesting agent when an approval is rejected", async () => {
+    const approval = {
+      id: "approval-rejected",
+      companyId: "company-1",
+      type: "hire_agent",
+      status: "rejected",
+      payload: {},
+      requestedByAgentId: "agent-1",
+    };
+    mockApprovalService.getById.mockResolvedValue({ ...approval, status: "pending" });
+    mockApprovalService.reject.mockResolvedValue({ approval, applied: true });
+    mockIssueApprovalService.listIssuesForApproval.mockResolvedValue([
+      { id: "hire-review-child", status: "in_review", assigneeAgentId: "agent-1" },
+    ]);
+
+    const res = await request(await createApp())
+      .post(`/api/approvals/${approval.id}/reject`)
+      .send({ decisionNote: "Revise scope" });
+
+    expect(res.status).toBe(200);
+    expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
+      "agent-1",
+      expect.objectContaining({ reason: "approval_rejected" }),
+    );
+  });
+
+  it("wakes the requesting agent when approval revision is requested", async () => {
+    const approval = {
+      id: "approval-revision",
+      companyId: "company-1",
+      type: "hire_agent",
+      status: "revision_requested",
+      payload: {},
+      requestedByAgentId: "agent-1",
+    };
+    mockApprovalService.getById.mockResolvedValue({ ...approval, status: "pending" });
+    mockApprovalService.requestRevision.mockResolvedValue(approval);
+    mockIssueApprovalService.listIssuesForApproval.mockResolvedValue([
+      { id: "hire-review-child", status: "in_review", assigneeAgentId: "agent-1" },
+    ]);
+
+    const res = await request(await createApp())
+      .post(`/api/approvals/${approval.id}/request-revision`)
+      .send({ decisionNote: "Add source boundaries" });
+
+    expect(res.status).toBe(200);
+    expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
+      "agent-1",
+      expect.objectContaining({ reason: "approval_revision_requested" }),
+    );
+  });
+
   it("rejects approval decisions for companies outside the caller scope", async () => {
     mockApprovalService.getById.mockResolvedValue({
       id: "approval-2",
