@@ -106,10 +106,35 @@ export const builtInAgentResetSchema = z.object({
 
 export type BuiltInAgentReset = z.infer<typeof builtInAgentResetSchema>;
 
-export const createAgentHireSchema = createAgentSchema.extend({
+export const trustedTemplateAgentHireSchema = z.object({
+  templateSlug: z.string().trim().min(1),
+  projectId: z.string().uuid(),
+  name: z.string().trim().min(1).optional(),
+  reportsTo: z.string().uuid().optional().nullable(),
+  sourceIssueId: z.string().uuid().optional().nullable(),
+  sourceIssueIds: z.array(z.string().uuid()).optional(),
+}).strict();
+
+export type TrustedTemplateAgentHire = z.infer<typeof trustedTemplateAgentHireSchema>;
+
+const legacyAgentHireSchema = createAgentSchema.extend({
   sourceIssueId: z.string().uuid().optional().nullable(),
   sourceIssueIds: z.array(z.string().uuid()).optional(),
 });
+
+export const createAgentHireSchema = z.preprocess(
+  (value) => {
+    if (value && typeof value === "object" && "templateSlug" in value) {
+      return { trustedTemplateHire: value };
+    }
+    return value;
+  },
+  z.union([
+    z.object({ trustedTemplateHire: trustedTemplateAgentHireSchema })
+      .transform(({ trustedTemplateHire }) => trustedTemplateHire),
+    legacyAgentHireSchema,
+  ]),
+);
 
 export type CreateAgentHire = z.infer<typeof createAgentHireSchema>;
 

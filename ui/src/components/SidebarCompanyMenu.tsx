@@ -235,8 +235,15 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
         >
           <span className="flex min-w-0 flex-1 items-center gap-2">
             {selectedCompany ? <WorkspaceIcon company={selectedCompany} /> : null}
-            <span className={cn("truncate text-sm font-bold text-foreground", rail && SIDEBAR_RAIL_HIDDEN_LABEL)}>
-              {selectedCompany?.name ?? "Select company"}
+            <span className={cn("min-w-0 flex-1", rail && SIDEBAR_RAIL_HIDDEN_LABEL)}>
+              <span className="block truncate text-sm font-bold text-foreground">
+                {selectedCompany?.name ?? "Select company"}
+              </span>
+              {selectedCompany ? (
+                <span className="block truncate text-[9px] font-semibold uppercase tracking-[0.14em] text-primary">
+                  by Conversion Alchemy
+                </span>
+              ) : null}
             </span>
           </span>
           {!rail && <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />}

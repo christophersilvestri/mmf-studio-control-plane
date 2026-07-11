@@ -27,6 +27,8 @@ import {
   Plus,
   X,
   HelpCircle,
+  BriefcaseBusiness,
+  GitBranch,
 } from "lucide-react";
 import {
   Tooltip,
@@ -58,6 +60,7 @@ export function NewProjectDialog() {
   const [expanded, setExpanded] = useState(false);
   const [workspaceLocalPath, setWorkspaceLocalPath] = useState("");
   const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState("");
+  const [workspaceKind, setWorkspaceKind] = useState<"knowledge" | "code">("knowledge");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
   const [statusOpen, setStatusOpen] = useState(false);
@@ -110,6 +113,7 @@ export function NewProjectDialog() {
     setExpanded(false);
     setWorkspaceLocalPath("");
     setWorkspaceRepoUrl("");
+    setWorkspaceKind("knowledge");
     setWorkspaceError(null);
   }
 
@@ -148,6 +152,10 @@ export function NewProjectDialog() {
     const localPath = workspaceLocalPath.trim();
     const repoUrl = workspaceRepoUrl.trim();
 
+    if (workspaceKind === "knowledge" && !localPath) {
+      setWorkspaceError("Knowledge-work projects need a private local client folder.");
+      return;
+    }
     if (localPath && !isAbsolutePath(localPath)) {
       setWorkspaceError("Local folder must be a full absolute path.");
       return;
@@ -176,6 +184,11 @@ export function NewProjectDialog() {
             : deriveWorkspaceNameFromRepo(repoUrl),
           ...(localPath ? { cwd: localPath } : {}),
           ...(repoUrl ? { repoUrl } : {}),
+          sourceType: workspaceKind === "knowledge"
+            ? "non_git_path"
+            : repoUrl
+              ? "git_repo"
+              : "local_path",
         };
         await projectsApi.createWorkspace(created.id, workspacePayload);
       }
@@ -281,30 +294,76 @@ export function NewProjectDialog() {
 
         <div className="px-4 pt-3 pb-3 space-y-3 border-t border-border">
           <div>
-            <div className="mb-1 flex items-center gap-1.5">
-              <label className="block text-xs text-muted-foreground">Repo URL</label>
-              <span className="text-xs text-muted-foreground/50">optional</span>
-              <Tooltip delayDuration={300}>
-                <TooltipTrigger asChild>
-                  <HelpCircle className="h-3 w-3 text-muted-foreground/50 cursor-help" />
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-(--sz-240px) text-xs">
-                  Link a GitHub repository so agents can clone, read, and push code for this project.
-                </TooltipContent>
-              </Tooltip>
+            <div className="mb-1.5 text-xs font-medium text-foreground">Project workspace</div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => { setWorkspaceKind("knowledge"); setWorkspaceRepoUrl(""); setWorkspaceError(null); }}
+                className={cn(
+                  "flex items-start gap-2 rounded-md border px-3 py-2 text-left transition-colors",
+                  workspaceKind === "knowledge"
+                    ? "border-primary bg-primary/8 text-foreground"
+                    : "border-border text-muted-foreground hover:bg-accent/50",
+                )}
+              >
+                <BriefcaseBusiness className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  <span className="block text-xs font-medium">Knowledge workspace</span>
+                  <span className="mt-0.5 block text-[11px] leading-4">Private client files. No Git required.</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setWorkspaceKind("code"); setWorkspaceError(null); }}
+                className={cn(
+                  "flex items-start gap-2 rounded-md border px-3 py-2 text-left transition-colors",
+                  workspaceKind === "code"
+                    ? "border-primary bg-primary/8 text-foreground"
+                    : "border-border text-muted-foreground hover:bg-accent/50",
+                )}
+              >
+                <GitBranch className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  <span className="block text-xs font-medium">Git / code project</span>
+                  <span className="mt-0.5 block text-[11px] leading-4">Repository or local checkout.</span>
+                </span>
+              </button>
             </div>
-            <input
-              className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
-              value={workspaceRepoUrl}
-              onChange={(e) => { setWorkspaceRepoUrl(e.target.value); setWorkspaceError(null); }}
-              placeholder="https://github.com/org/repo"
-            />
           </div>
+
+          {workspaceKind === "code" ? (
+            <div>
+              <div className="mb-1 flex items-center gap-1.5">
+                <label className="block text-xs text-muted-foreground">Repo URL</label>
+                <span className="text-xs text-muted-foreground/50">optional</span>
+                <Tooltip delayDuration={300}>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-3 w-3 text-muted-foreground/50 cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-(--sz-240px) text-xs">
+                    Link a GitHub repository so agents can clone, read, and push code for this project.
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <input
+                className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+                value={workspaceRepoUrl}
+                onChange={(e) => { setWorkspaceRepoUrl(e.target.value); setWorkspaceError(null); }}
+                placeholder="https://github.com/org/repo"
+              />
+            </div>
+          ) : (
+            <p className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] leading-4 text-muted-foreground">
+              Agents work directly in this private Mac mini folder. MMF Studio records it as non-Git knowledge work.
+            </p>
+          )}
 
           <div>
             <div className="mb-1 flex items-center gap-1.5">
-              <label className="block text-xs text-muted-foreground">Local folder</label>
-              <span className="text-xs text-muted-foreground/50">optional</span>
+              <label className="block text-xs text-muted-foreground">
+                {workspaceKind === "knowledge" ? "Private client folder" : "Local folder"}
+              </label>
+              <span className="text-xs text-muted-foreground/50">{workspaceKind === "knowledge" ? "required" : "optional"}</span>
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>
                   <HelpCircle className="h-3 w-3 text-muted-foreground/50 cursor-help" />
