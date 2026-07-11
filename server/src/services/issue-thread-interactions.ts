@@ -1917,25 +1917,36 @@ export function issueThreadInteractionService(db: Db) {
       if (current.companyId !== issue.companyId || current.issueId !== issue.id) {
         throw notFound("Interaction not found");
       }
-      if (current.kind !== "ask_user_questions") {
-        throw unprocessable("Only ask_user_questions interactions can be cancelled");
+      if (![
+        "ask_user_questions",
+        "request_confirmation",
+        "request_checkbox_confirmation",
+      ].includes(current.kind)) {
+        throw unprocessable("Only question or confirmation interactions can be cancelled");
       }
       if (current.status !== "pending") {
         throw conflict("Interaction has already been resolved");
       }
 
       const reason = data.reason?.trim() || null;
+      const result = current.kind === "ask_user_questions"
+        ? {
+            version: 1 as const,
+            answers: [],
+            cancelled: true as const,
+            cancellationReason: reason,
+            summaryMarkdown: null,
+          }
+        : {
+            version: 1 as const,
+            outcome: "cancelled" as const,
+            reason,
+          };
       const [updated] = await db
         .update(issueThreadInteractions)
         .set({
           status: "cancelled",
-          result: {
-            version: 1,
-            answers: [],
-            cancelled: true,
-            cancellationReason: reason,
-            summaryMarkdown: null,
-          },
+          result,
           resolvedByAgentId: actor.agentId ?? null,
           resolvedByUserId: actor.userId ?? null,
           resolvedAt: new Date(),

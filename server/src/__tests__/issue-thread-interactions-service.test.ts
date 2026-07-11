@@ -575,6 +575,51 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
     })).rejects.toThrow("Interaction has already been resolved");
   });
 
+  it("persists cancelled request confirmations", async () => {
+    const { companyId, issueId } = await seedConfirmationIssue("Cancel confirmation");
+    const agentId = randomUUID();
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "Interaction Owner",
+      role: "pm",
+      status: "active",
+      adapterType: "hermes_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+    });
+
+    const created = await interactionsSvc.create({
+      id: issueId,
+      companyId,
+    }, {
+      kind: "request_confirmation",
+      continuationPolicy: "wake_assignee_on_accept",
+      payload: {
+        version: 1,
+        prompt: "Approve this hire?",
+      },
+    }, {
+      agentId,
+    });
+
+    const cancelled = await interactionsSvc.cancelQuestions({
+      id: issueId,
+      companyId,
+    }, created.id, {
+      reason: "Superseded by corrected request",
+    }, {
+      agentId,
+    });
+
+    expect(cancelled.status).toBe("cancelled");
+    expect(cancelled.result).toEqual({
+      version: 1,
+      outcome: "cancelled",
+      reason: "Superseded by corrected request",
+    });
+  });
+
   it("expires ask_user_questions interactions by default when a user comments after creation", async () => {
     const { companyId, issueId } = await seedConfirmationIssue("Question supersede");
     const commentId = randomUUID();
