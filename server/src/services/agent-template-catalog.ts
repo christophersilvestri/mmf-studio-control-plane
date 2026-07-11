@@ -38,6 +38,20 @@ const catalogSchema = z.object({
   }
 });
 
+const canonicalTemplateSchema = z.object({
+  slug: z.string().trim().min(1),
+  name: z.string().trim().min(1),
+  status: z.literal("approved_v0"),
+  roleEnum: z.string().trim().min(1),
+  defaultIcon: z.string().trim().min(1),
+  projectSpecific: z.boolean(),
+}).passthrough();
+
+const canonicalRegistrySchema = z.object({
+  schemaVersion: z.literal(1),
+  templates: z.array(canonicalTemplateSchema).min(1),
+}).passthrough();
+
 export type TrustedAgentTemplate = z.infer<typeof templateSchema>;
 export type TrustedAgentTemplateCatalog = z.infer<typeof catalogSchema>;
 
@@ -85,6 +99,51 @@ function substituteValue(value: unknown): unknown {
   return value;
 }
 
+async function validateAgainstCanonicalRegistry(catalog: TrustedAgentTemplateCatalog) {
+  const repoRoot = process.env.MMF_STUDIO_REPO_ROOT?.trim();
+  if (!repoRoot) throw unprocessable("Trusted agent templates require server variable MMF_STUDIO_REPO_ROOT");
+  const canonicalPath = path.join(repoRoot, "templates", "paperclip-agents", "registry.json");
+
+  let canonicalJson: unknown;
+  try {
+    canonicalJson = JSON.parse(await readFile(canonicalPath, "utf8"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw unprocessable(`Unable to read canonical MMF agent registry at ${canonicalPath}: ${message}`);
+  }
+  const canonical = canonicalRegistrySchema.safeParse(canonicalJson);
+  if (!canonical.success) {
+    throw unprocessable(`Canonical MMF agent registry is invalid: ${canonical.error.message}`);
+  }
+
+  const expected = new Map(
+    canonical.data.templates
+      .filter((entry) => entry.projectSpecific)
+      .map((entry) => [entry.slug, entry]),
+  );
+  const actualSlugs = new Set(catalog.templates.map((entry) => entry.slug));
+  const missing = [...expected.keys()].filter((slug) => !actualSlugs.has(slug));
+  const extra = [...actualSlugs].filter((slug) => !expected.has(slug));
+  const drift = catalog.templates.flatMap((entry) => {
+    const source = expected.get(entry.slug);
+    if (!source) return [];
+    const fields: string[] = [];
+    if (entry.name !== source.name) fields.push(`name ${JSON.stringify(entry.name)} != ${JSON.stringify(source.name)}`);
+    if (entry.role !== source.roleEnum) fields.push(`role ${entry.role} != ${source.roleEnum}`);
+    if (entry.icon !== source.defaultIcon) fields.push(`icon ${entry.icon ?? "null"} != ${source.defaultIcon}`);
+    return fields.length ? [`${entry.slug}: ${fields.join(", ")}`] : [];
+  });
+  if (missing.length || extra.length || drift.length) {
+    throw unprocessable(
+      `Trusted agent template catalog drifted from canonical MMF registry: ${[
+        missing.length ? `missing ${missing.join(", ")}` : "",
+        extra.length ? `extra ${extra.join(", ")}` : "",
+        ...drift,
+      ].filter(Boolean).join("; ")}`,
+    );
+  }
+}
+
 export async function loadTrustedAgentTemplateCatalog(options: { forceReload?: boolean } = {}) {
   const sourcePath = catalogPath();
   if (!options.forceReload && cachedCatalog?.sourcePath === sourcePath) return cachedCatalog.value;
@@ -111,6 +170,7 @@ export async function loadTrustedAgentTemplateCatalog(options: { forceReload?: b
     throw unprocessable(`Trusted agent template registry is invalid: ${parsed.error.message}`);
   }
 
+  await validateAgainstCanonicalRegistry(parsed.data);
   cachedCatalog = { sourcePath, value: parsed.data };
   return parsed.data;
 }
