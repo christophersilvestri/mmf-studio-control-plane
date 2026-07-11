@@ -1734,6 +1734,28 @@ export function authorizationService(db: Db) {
           explanation: "Allowed because the actor owns the assigned issue.",
         });
       }
+      if (input.action === "issue:mutate" && resource?.parentIssueId && resource.projectId) {
+        const parent = await db
+          .select({
+            assigneeAgentId: issues.assigneeAgentId,
+            companyId: issues.companyId,
+            projectId: issues.projectId,
+          })
+          .from(issues)
+          .where(and(eq(issues.id, resource.parentIssueId), eq(issues.companyId, resource.companyId)))
+          .then((rows) => rows[0] ?? null);
+        if (
+          parent?.assigneeAgentId === actorAgentId &&
+          parent.companyId === resource.companyId &&
+          parent.projectId === resource.projectId
+        ) {
+          return allow({
+            action: input.action,
+            reason: "allow_manager_chain",
+            explanation: "Allowed because the actor owns the target issue's direct parent in the same project.",
+          });
+        }
+      }
       if (!resource?.assigneeAgentId) {
         return allow({
           action: input.action,

@@ -507,6 +507,73 @@ describeEmbeddedPostgres("authorization service", () => {
     });
   });
 
+  it("allows a parent issue owner to mutate a direct child in the same project only", async () => {
+    const company = await createCompany(db, "DirectChildManagerMutation");
+    const project = await createProject(db, company.id, "DirectChildProject");
+    const otherProject = await createProject(db, company.id, "OtherProject");
+    const orchestrator = await createAgent(db, company.id, { role: "pm" });
+    const specialist = await createAgent(db, company.id, { role: "engineer", reportsTo: orchestrator.id });
+    const responsibleUserId = await createUser(db);
+    await db.insert(companyMemberships).values({
+      companyId: company.id,
+      principalType: "user",
+      principalId: responsibleUserId,
+      status: "active",
+      membershipRole: "operator",
+    });
+    const parent = await createIssue(db, company.id, {
+      projectId: project.id,
+      assigneeAgentId: orchestrator.id,
+    });
+    const child = await createIssue(db, company.id, {
+      projectId: project.id,
+      parentId: parent.id,
+      assigneeAgentId: specialist.id,
+    });
+    const unrelated = await createIssue(db, company.id, {
+      projectId: otherProject.id,
+      parentId: parent.id,
+      assigneeAgentId: specialist.id,
+    });
+    const actor = {
+      type: "agent" as const,
+      agentId: orchestrator.id,
+      companyId: company.id,
+      onBehalfOfUserId: responsibleUserId,
+      source: "agent_jwt" as const,
+    };
+    const authorization = authorizationService(db);
+
+    await expect(authorization.decide({
+      actor,
+      action: "issue:mutate",
+      resource: {
+        type: "issue",
+        companyId: company.id,
+        issueId: child.id,
+        projectId: project.id,
+        parentIssueId: parent.id,
+        assigneeAgentId: specialist.id,
+      },
+    })).resolves.toMatchObject({
+      allowed: true,
+      reason: "allow_manager_chain",
+    });
+
+    await expect(authorization.decide({
+      actor,
+      action: "issue:mutate",
+      resource: {
+        type: "issue",
+        companyId: company.id,
+        issueId: unrelated.id,
+        projectId: otherProject.id,
+        parentIssueId: parent.id,
+        assigneeAgentId: specialist.id,
+      },
+    })).resolves.toMatchObject({ allowed: false });
+  });
+
   it("keeps responsible-user issue mutations denied for viewer memberships", async () => {
     const company = await createCompany(db, "ResponsibleUserIssueViewerDenied");
     const actorAgent = await createAgent(db, company.id, { role: "engineer" });
