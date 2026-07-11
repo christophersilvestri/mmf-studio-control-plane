@@ -14,6 +14,7 @@ import {
   issueDocuments,
   issueExecutionDecisions,
   issueRelations,
+  issueThreadInteractions,
   issues as issueRows,
   issueWorkProducts,
   pipelineCaseIssueLinks,
@@ -123,6 +124,7 @@ import {
   taskWatchdogScopeAllowsIssueMutation,
 } from "../services/task-watchdog-scope.js";
 import type { TaskWatchdogServiceDeps, taskWatchdogService } from "../services/task-watchdogs.js";
+import { wouldOrphanPendingWakeInteraction } from "../services/issue-review-continuation.js";
 import { logger } from "../middleware/logger.js";
 import { conflict, forbidden, HttpError, notFound, unauthorized, unprocessable } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -7589,6 +7591,33 @@ export function issueRoutes(
     await assertIssueEnvironmentSelection(existing.companyId, updateFields.executionWorkspaceSettings?.environmentId);
     const requestedAssigneeAgentId =
       normalizedAssigneeAgentId === undefined ? existing.assigneeAgentId : normalizedAssigneeAgentId;
+    const removesAgentForHumanOnlyReview =
+      normalizedAssigneeAgentId === null ||
+      (normalizedAssigneeAgentId === undefined && typeof req.body.assigneeUserId === "string");
+    if (removesAgentForHumanOnlyReview && existing.assigneeAgentId) {
+      const hasPendingWakeInteraction = await db
+        .select({ id: issueThreadInteractions.id })
+        .from(issueThreadInteractions)
+        .where(and(
+          eq(issueThreadInteractions.companyId, existing.companyId),
+          eq(issueThreadInteractions.issueId, existing.id),
+          eq(issueThreadInteractions.status, "pending"),
+          inArray(issueThreadInteractions.continuationPolicy, ["wake_assignee", "wake_assignee_on_accept"]),
+        ))
+        .limit(1)
+        .then((rows) => Boolean(rows[0]));
+      if (wouldOrphanPendingWakeInteraction({
+        currentAssigneeAgentId: existing.assigneeAgentId,
+        requestedAssigneeAgentId: normalizedAssigneeAgentId,
+        requestedAssigneeUserId: req.body.assigneeUserId,
+        hasPendingWakeInteraction,
+      })) {
+        res.status(409).json({
+          error: "Cannot remove the agent assignee while a pending interaction requires an assignee wake",
+        });
+        return;
+      }
+    }
     const explicitMoveToTodoRequested = reopenRequested || resumeRequested === true;
     const recoveryRelevantSourceMutationRequested =
       req.body.status !== undefined ||
