@@ -1683,7 +1683,8 @@ export async function assertGitSensitiveAdapterWorkspaceValid(input: {
     );
   }
 
-  if (workspaceExpectation && effectiveCwd && !await hasGitMetadata(effectiveCwd)) {
+  const explicitNonGitWorkspace = input.resolvedWorkspace.workspaceSourceType === "non_git_path";
+  if (workspaceExpectation && !explicitNonGitWorkspace && effectiveCwd && !await hasGitMetadata(effectiveCwd)) {
     fail(
       "missing_git_metadata",
       `Issue ${issue.identifier ?? issue.id} expected a git workspace for ${input.adapterType}, but "${effectiveCwd}" has no .git metadata.`,
@@ -2037,6 +2038,7 @@ export type ResolvedWorkspaceForRun = {
   source: "project_primary" | "task_session" | "agent_home";
   projectId: string | null;
   workspaceId: string | null;
+  workspaceSourceType?: string | null;
   repoUrl: string | null;
   repoRef: string | null;
   workspaceHints: Array<{
@@ -6911,6 +6913,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
             source: "project_primary" as const,
             projectId: resolvedProjectId,
             workspaceId: workspace.id,
+            workspaceSourceType: workspace.sourceType,
             repoUrl: workspace.repoUrl,
             repoRef: workspace.repoRef,
             workspaceHints,
