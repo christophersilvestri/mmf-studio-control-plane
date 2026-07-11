@@ -9288,11 +9288,30 @@ export function issueRoutes(
         return;
       }
       assertCompanyAccess(req, issue.companyId);
-      if (await rejectAgentIssueThreadInteractionResolution(req, res, issue)) return;
-      assertBoard(req);
 
       const actor = getActorInfo(req);
-      const interaction = await issueThreadInteractionService(db).cancelQuestions(issue, interactionId, req.body, {
+      const interactionService = issueThreadInteractionService(db);
+      if (req.actor.type === "agent") {
+        if (
+          req.actor.runId &&
+          !(await assertTaskWatchdogIssueMutationAllowed(req, res, issue, { allowWatchdogIssue: false }))
+        ) {
+          return;
+        }
+        const current = await interactionService.getById(interactionId);
+        if (!current || current.companyId !== issue.companyId || current.issueId !== issue.id) {
+          res.status(404).json({ error: "Interaction not found" });
+          return;
+        }
+        if (current.createdByAgentId !== actor.agentId) {
+          res.status(403).json({ error: "Agents may cancel only their own pending interactions" });
+          return;
+        }
+      } else {
+        assertBoard(req);
+      }
+
+      const interaction = await interactionService.cancelQuestions(issue, interactionId, req.body, {
         agentId: actor.agentId,
         userId: actor.actorType === "user" ? actor.actorId : null,
       });

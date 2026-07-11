@@ -11,6 +11,7 @@ const mockIssueService = vi.hoisted(() => ({
 
 const mockInteractionService = vi.hoisted(() => ({
   listForIssue: vi.fn(),
+  getById: vi.fn(),
   create: vi.fn(),
   acceptInteraction: vi.fn(),
   acceptSuggestedTasks: vi.fn(),
@@ -185,6 +186,7 @@ describe.sequential("issue thread interaction routes", () => {
     vi.clearAllMocks();
     mockIssueService.getById.mockResolvedValue(createIssue());
     mockInteractionService.listForIssue.mockResolvedValue([]);
+    mockInteractionService.getById.mockResolvedValue(null);
     mockInteractionService.expireRequestConfirmationsSupersededByHistoricalComments.mockResolvedValue([]);
     mockInteractionService.create.mockResolvedValue({
       id: "interaction-1",
@@ -608,6 +610,69 @@ describe.sequential("issue thread interaction routes", () => {
         action: "issue.thread_interaction_cancelled",
       }),
     );
+  });
+
+  it("allows an agent to cancel its own pending confirmation", async () => {
+    mockInteractionService.getById.mockResolvedValueOnce({
+      id: "interaction-confirmation",
+      companyId: "company-1",
+      issueId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      createdByAgentId: CREATED_AGENT_ID,
+      status: "pending",
+    });
+    mockInteractionService.cancelQuestions.mockResolvedValueOnce({
+      id: "interaction-confirmation",
+      companyId: "company-1",
+      issueId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      kind: "request_confirmation",
+      status: "cancelled",
+      continuationPolicy: "wake_assignee_on_accept",
+      createdByAgentId: CREATED_AGENT_ID,
+      payload: { version: 1, prompt: "Approve?" },
+      result: { version: 1, outcome: "cancelled", reason: "Superseded" },
+    });
+    const app = await createApp({
+      type: "agent",
+      agentId: CREATED_AGENT_ID,
+      companyId: "company-1",
+      runId: "run-1",
+    });
+
+    const res = await request(app)
+      .post("/api/issues/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/interactions/interaction-confirmation/cancel")
+      .send({ reason: "Superseded" });
+
+    expect(res.status).toBe(200);
+    expect(mockInteractionService.cancelQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }),
+      "interaction-confirmation",
+      { reason: "Superseded" },
+      { agentId: CREATED_AGENT_ID, userId: null },
+    );
+  });
+
+  it("forbids an agent from cancelling another actor's interaction", async () => {
+    mockInteractionService.getById.mockResolvedValueOnce({
+      id: "interaction-confirmation",
+      companyId: "company-1",
+      issueId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      createdByAgentId: ASSIGNEE_AGENT_ID,
+      status: "pending",
+    });
+    const app = await createApp({
+      type: "agent",
+      agentId: CREATED_AGENT_ID,
+      companyId: "company-1",
+      runId: "run-1",
+    });
+
+    const res = await request(app)
+      .post("/api/issues/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/interactions/interaction-confirmation/cancel")
+      .send({ reason: "Not mine" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("Agents may cancel only their own pending interactions");
+    expect(mockInteractionService.cancelQuestions).not.toHaveBeenCalled();
   });
 
   it("accepts request confirmations and wakes the current assignee when configured for accept-only wakeups", async () => {
