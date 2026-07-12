@@ -130,6 +130,11 @@ export type TaskWatchdogClassifierResult =
     liveIssueIds: string[];
   }
   | {
+    state: "completed";
+    reason: string;
+    includedIssueIds: string[];
+  }
+  | {
     state: "pending_first_run";
     reason: string;
     includedIssueIds: string[];
@@ -331,6 +336,14 @@ export function classifyTaskWatchdogSubtree(input: TaskWatchdogClassifierInput):
       reason: "At least one issue in the watched subtree has a live run, queued wake, or scheduled retry.",
       includedIssueIds: includedIds,
       liveIssueIds: uniqueLiveIssueIds,
+    };
+  }
+
+  if (included.length > 1 && included.every((issue) => isTerminalIssueStatus(issue.status))) {
+    return {
+      state: "completed",
+      reason: "The watched parent and every non-watchdog descendant are terminal.",
+      includedIssueIds: includedIds,
     };
   }
 

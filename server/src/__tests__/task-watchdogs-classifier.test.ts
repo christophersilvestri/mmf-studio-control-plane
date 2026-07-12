@@ -50,6 +50,21 @@ describe("task watchdog subtree classifier", () => {
     });
   });
 
+  it("classifies a fully terminal subtree as completed without waking the watchdog", () => {
+    const result = classify({
+      issues: [
+        issue({ status: "done" }),
+        issue({ id: childId, identifier: "PAP-2", parentId: sourceId, status: "cancelled" }),
+      ],
+    });
+
+    expect(result).toEqual({
+      state: "completed",
+      reason: "The watched parent and every non-watchdog descendant are terminal.",
+      includedIssueIds: [sourceId, childId],
+    });
+  });
+
   it("treats terminal and waiting leaves as stopped work that needs verification", () => {
     const result = classify({
       issues: [
