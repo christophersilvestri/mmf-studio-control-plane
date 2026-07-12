@@ -8638,6 +8638,32 @@ export function issueRoutes(
         await destroyReusableSandboxLeasesForTerminalIssue(issue);
       }
       if (becameTerminal && issue.parentId) {
+        if (issue.executionPolicy?.parentContinuation === "on_terminal") {
+          const parent = await svc.getById(issue.parentId);
+          if (parent?.assigneeAgentId && parent.companyId === issue.companyId && parent.status !== "cancelled") {
+            addWakeup(parent.assigneeAgentId, {
+              source: "automation",
+              triggerDetail: "system",
+              reason: "issue_child_completed",
+              idempotencyKey: `issue_child_completed:${parent.id}:${issue.id}`,
+              payload: {
+                issueId: parent.id,
+                completedChildIssueId: issue.id,
+                completedChildIdentifier: issue.identifier,
+                completedChildStatus: issue.status,
+              },
+              requestedByActorType: actor.actorType,
+              requestedByActorId: actor.actorId,
+              contextSnapshot: {
+                issueId: parent.id,
+                taskId: parent.id,
+                wakeReason: "issue_child_completed",
+                source: "issue.child_completed",
+                completedChildIssueId: issue.id,
+              },
+            });
+          }
+        }
         const parent = await svc.getWakeableParentAfterChildCompletion(issue.parentId);
         if (parent) {
           addWakeup(parent.assigneeAgentId, {

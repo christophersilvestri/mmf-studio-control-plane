@@ -496,6 +496,7 @@ function mergeAdapterRecoveryMetadata(input: {
 const RUNNING_ISSUE_WAKE_REASONS_REQUIRING_FOLLOWUP = new Set([
   "approval_approved",
   ISSUE_BLOCKERS_RESOLVED_WAKE_REASON,
+  "issue_child_completed",
 ]);
 const ISSUE_RESPONSIBLE_USER_WAKE_REASONS = new Set([
   "issue_assigned",
@@ -504,6 +505,7 @@ const ISSUE_RESPONSIBLE_USER_WAKE_REASONS = new Set([
   "issue_comment_mentioned",
   "issue_reopened_via_comment",
   "issue_blockers_resolved",
+  "issue_child_completed",
   "issue_children_completed",
   "issue_status_changed",
   "issue_tree_restored",
