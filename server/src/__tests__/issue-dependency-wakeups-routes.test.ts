@@ -347,6 +347,10 @@ describe("issue dependency wakeups in issue routes", () => {
             issueId: "parent-1",
             completedChildIssueId: "child-1",
           }),
+          contextSnapshot: expect.objectContaining({
+            issueId: "parent-1",
+            resumeIntent: true,
+          }),
         }),
       );
     });

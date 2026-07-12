@@ -8659,6 +8659,7 @@ export function issueRoutes(
                 taskId: parent.id,
                 wakeReason: "issue_child_completed",
                 source: "issue.child_completed",
+                resumeIntent: true,
                 completedChildIssueId: issue.id,
               },
             });
