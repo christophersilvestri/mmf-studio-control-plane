@@ -43,6 +43,18 @@ describe("normalizeIssueExecutionPolicy", () => {
     expect(normalizeIssueExecutionPolicy({ stages: [] })).toBeNull();
   });
 
+  it("preserves an on-terminal parent continuation without stages", () => {
+    expect(normalizeIssueExecutionPolicy({
+      stages: [],
+      parentContinuation: "on_terminal",
+    })).toEqual({
+      mode: "normal",
+      commentRequired: true,
+      stages: [],
+      parentContinuation: "on_terminal",
+    });
+  });
+
   it("throws when all participants are invalid (missing agentId)", () => {
     expect(() =>
       normalizeIssueExecutionPolicy({
