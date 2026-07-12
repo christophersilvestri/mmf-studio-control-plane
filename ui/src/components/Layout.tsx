@@ -14,7 +14,6 @@ import { NewAgentDialog } from "./NewAgentDialog";
 import { KeyboardShortcutsCheatsheet } from "./KeyboardShortcutsCheatsheet";
 import { ToastViewport } from "./ToastViewport";
 import { MobileBottomNav } from "./MobileBottomNav";
-import { WorktreeBanner } from "./WorktreeBanner";
 import { DevRestartBanner } from "./DevRestartBanner";
 import { StandaloneBrowserControls } from "./StandaloneBrowserControls";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
@@ -523,7 +522,6 @@ export function Layout() {
       >
         Skip to Main Content
       </a>
-      <WorktreeBanner />
       <DevRestartBanner devServer={health?.devServer} />
       <div className={cn("min-h-0 flex-1", isMobile ? "w-full" : "flex overflow-clip")}>
         {isMobile && sidebarOpen && (
