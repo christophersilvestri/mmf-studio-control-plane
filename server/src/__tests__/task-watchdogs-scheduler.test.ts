@@ -375,7 +375,7 @@ describeEmbeddedPostgres("task watchdog scheduler", () => {
     expect(wakes).toHaveLength(1);
   });
 
-  it("reconciles ancestor watchdogs for a descendant issue mutation", async () => {
+  it("does not wake an ancestor watchdog when the full project subtree is terminal", async () => {
     const companyId = await seedCompany();
     const sourceId = await seedIssue(companyId, { identifier: "WDOG-ANCESTOR", status: "done" });
     const childId = await seedIssue(companyId, { parentId: sourceId, status: "done" });
@@ -385,14 +385,14 @@ describeEmbeddedPostgres("task watchdog scheduler", () => {
 
     const result = await service.reconcileForIssueAndAncestors(companyId, childId);
 
-    expect(result).toMatchObject({ checked: 1, triggered: 1 });
-    expect(wakes).toHaveLength(1);
+    expect(result).toMatchObject({ checked: 1, triggered: 0 });
+    expect(wakes).toHaveLength(0);
   });
 
   it("marks a completed watchdog fingerprint reviewed, then reuses the same issue for a later stopped state", async () => {
     const companyId = await seedCompany();
     const sourceId = await seedIssue(companyId, { identifier: "WDOG-3", status: "done" });
-    const childId = await seedIssue(companyId, { parentId: sourceId, status: "done" });
+    const childId = await seedIssue(companyId, { parentId: sourceId, status: "blocked" });
     const agentId = await seedAgent(companyId);
     await seedWatchdog(companyId, sourceId, agentId);
     const { service, wakes } = createService();
@@ -433,7 +433,7 @@ describeEmbeddedPostgres("task watchdog scheduler", () => {
   it("does not let an old terminal watchdog review mark a newer observed fingerprint reviewed", async () => {
     const companyId = await seedCompany();
     const sourceId = await seedIssue(companyId, { identifier: "WDOG-STALE", status: "done" });
-    const childId = await seedIssue(companyId, { parentId: sourceId, status: "done" });
+    const childId = await seedIssue(companyId, { parentId: sourceId, status: "blocked" });
     const agentId = await seedAgent(companyId);
     await seedWatchdog(companyId, sourceId, agentId);
     const { service, wakes } = createService();
