@@ -395,8 +395,17 @@ describeEmbeddedPostgres("issue watchdog routes", () => {
   it("enforces persisted watchdog scope for issue mutations and child creation", async () => {
     const companyId = await seedCompany();
     const watchdogAgentId = await seedAgent(companyId, { name: "Scoped Watchdog" });
-    const watchedRootId = await seedIssue(companyId, { title: "Watched root", identifier: "WDOG-ROOT" });
-    const watchedChildId = await seedIssue(companyId, { title: "Watched child", parentId: watchedRootId });
+    const projectOrchestratorId = await seedAgent(companyId, { name: "Project Orchestrator" });
+    const watchedRootId = await seedIssue(companyId, {
+      title: "Watched root",
+      identifier: "WDOG-ROOT",
+      assigneeAgentId: projectOrchestratorId,
+    });
+    const watchedChildId = await seedIssue(companyId, {
+      title: "Watched child",
+      parentId: watchedRootId,
+      assigneeAgentId: projectOrchestratorId,
+    });
     const unrelatedRootId = await seedIssue(companyId, { title: "Unrelated root" });
     const watchdogIssueId = await seedIssue(companyId, {
       title: "Reusable watchdog issue",
@@ -427,6 +436,24 @@ describeEmbeddedPostgres("issue watchdog routes", () => {
       .patch(`/api/issues/${watchdogIssueId}`)
       .send({ title: "Reusable watchdog issue completed" });
     expect(watchdogIssuePatch.status, JSON.stringify(watchdogIssuePatch.body)).toBe(200);
+
+    const allowedWatchedRootResume = await request(app)
+      .patch(`/api/issues/${watchedRootId}`)
+      .send({
+        comment: "Retry the project handoff once and produce one healthy outcome.",
+        resume: true,
+      });
+    expect(allowedWatchedRootResume.status, JSON.stringify(allowedWatchedRootResume.body)).toBe(200);
+    expect(allowedWatchedRootResume.body.id).toBe(watchedRootId);
+
+    const deniedWatchedChildResume = await request(app)
+      .patch(`/api/issues/${watchedChildId}`)
+      .send({
+        comment: "Improperly retry a child activity.",
+        resume: true,
+      });
+    expect(deniedWatchedChildResume.status, JSON.stringify(deniedWatchedChildResume.body)).toBe(403);
+    expect(deniedWatchedChildResume.body.error).toBe("Agent cannot request follow-up for another agent's issue");
 
     const deniedWatchdogDescendantPatch = await request(app)
       .patch(`/api/issues/${watchdogIssueChildId}`)
