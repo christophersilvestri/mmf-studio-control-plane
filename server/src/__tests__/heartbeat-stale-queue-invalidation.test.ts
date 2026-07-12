@@ -1127,6 +1127,40 @@ describeEmbeddedPostgres("heartbeat stale queued-run invalidation", () => {
     expect(countExecuteCallsForRun(runId)).toBe(0);
   });
 
+  it("runs a terminal parent continuation when structured resume intent is present", async () => {
+    const { companyId, agentId } = await seedCompanyAndAgent();
+    const issueId = randomUUID();
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Completed orchestration parent",
+      status: "done",
+      priority: "medium",
+      assigneeAgentId: agentId,
+    });
+
+    const { runId } = await seedQueuedRun({
+      companyId,
+      agentId,
+      issueId,
+      wakeReason: "issue_child_completed",
+      invocationSource: "automation",
+      contextExtras: { resumeIntent: true },
+    });
+
+    await heartbeat.resumeQueuedRuns();
+
+    const executed = await waitForCondition(async () => countExecuteCallsForRun(runId) === 1);
+    expect(executed).toBe(true);
+    const run = await db
+      .select({ status: heartbeatRuns.status, errorCode: heartbeatRuns.errorCode })
+      .from(heartbeatRuns)
+      .where(eq(heartbeatRuns.id, runId))
+      .then((rows) => rows[0] ?? null);
+    expect(run?.status).not.toBe("cancelled");
+    expect(run?.errorCode).not.toBe("issue_terminal_status");
+  });
+
   it("cancels queued max-turn continuations when the issue is no longer in_progress before the run starts", async () => {
     const { companyId, agentId } = await seedCompanyAndAgent();
     const issueId = randomUUID();
