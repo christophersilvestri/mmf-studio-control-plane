@@ -618,6 +618,7 @@ export interface IssueExecutionPolicy {
   commentRequired: boolean;
   stages: IssueExecutionStage[];
   monitor?: IssueExecutionMonitorPolicy | null;
+  parentContinuation?: "on_terminal" | null;
   reviewPreset?: LowTrustReviewPresetPolicy;
   authorizationPolicy?: TrustAuthorizationPolicy;
 }

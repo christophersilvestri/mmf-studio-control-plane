@@ -280,6 +280,78 @@ describe("issue dependency wakeups in issue routes", () => {
     });
   });
 
+  it("wakes the parent when an opted-in child becomes terminal even while siblings remain open", async () => {
+    mockIssueService.getById.mockImplementation(async (id: string) => id === "parent-1" ? ({
+        id: "parent-1",
+        companyId: "company-1",
+        identifier: "PAP-100",
+        title: "Orchestration parent",
+        description: null,
+        status: "done",
+        priority: "medium",
+        parentId: null,
+        assigneeAgentId: "agent-9",
+        assigneeUserId: null,
+        createdByAgentId: null,
+        createdByUserId: null,
+        executionWorkspaceId: null,
+        labels: [],
+        labelIds: [],
+      }) : ({
+        id: "child-1",
+        companyId: "company-1",
+        identifier: "PAP-101",
+        title: "Sequenced activity",
+        description: null,
+        status: "in_progress",
+        priority: "medium",
+        parentId: "parent-1",
+        assigneeAgentId: "agent-1",
+        assigneeUserId: null,
+        createdByAgentId: null,
+        createdByUserId: null,
+        executionWorkspaceId: null,
+        executionPolicy: { mode: "normal", commentRequired: true, stages: [], parentContinuation: "on_terminal" },
+        labels: [],
+        labelIds: [],
+      }));
+    mockIssueService.update.mockResolvedValue({
+      id: "child-1",
+      companyId: "company-1",
+      identifier: "PAP-101",
+      title: "Sequenced activity",
+      description: null,
+      status: "done",
+      priority: "medium",
+      parentId: "parent-1",
+      assigneeAgentId: "agent-1",
+      assigneeUserId: null,
+      createdByAgentId: null,
+      createdByUserId: null,
+      executionWorkspaceId: null,
+      executionPolicy: { mode: "normal", commentRequired: true, stages: [], parentContinuation: "on_terminal" },
+      labels: [],
+      labelIds: [],
+    });
+    mockIssueService.getWakeableParentAfterChildCompletion.mockResolvedValue(null);
+
+    const res = await request(await createApp()).patch("/api/issues/child-1").send({ status: "done" });
+    expect(res.status).toBe(200);
+    await vi.waitFor(() => {
+      expect(mockWakeup).toHaveBeenCalledWith(
+        "agent-9",
+        expect.objectContaining({
+          reason: "issue_child_completed",
+          idempotencyKey: "issue_child_completed:parent-1:child-1",
+          payload: expect.objectContaining({
+            issueId: "parent-1",
+            completedChildIssueId: "child-1",
+          }),
+        }),
+      );
+    });
+  });
+
   it("wakes the parent when all direct children become terminal", async () => {
     mockIssueService.getById.mockResolvedValue({
       id: "child-1",
