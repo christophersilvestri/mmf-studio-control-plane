@@ -55,7 +55,7 @@
       "allowedParentRoles": ["pm"],
       "requiresProjectWorkspace": true,
       "adapterType": "hermes_local",
-      "adapterConfig": { "cwd": "${PROJECT_WORKSPACE}", "model": "gpt-5.6-sol", "provider": "openai-codex", "toolsets": "terminal,file,web", "timeoutSec": 600, "persistSession": true, "instructionsFilePath": "${MMF_STUDIO_REPO_ROOT}/templates/paperclip-agents/research-specialist/agents.md" },
+      "adapterConfig": { "cwd": "${PROJECT_WORKSPACE}", "model": "gpt-5.6-terra", "provider": "openai-codex", "toolsets": "terminal,file,web", "timeoutSec": 600, "persistSession": true, "instructionsFilePath": "${MMF_STUDIO_REPO_ROOT}/templates/paperclip-agents/research-specialist/agents.md" },
       "runtimeConfig": { "heartbeat": { "enabled": false, "wakeOnDemand": true, "maxConcurrentRuns": 1 } },
       "permissions": { "canCreateAgents": false, "canCreateSkills": false },
       "budgetMonthlyCents": 0
@@ -106,7 +106,7 @@
       "allowedParentRoles": ["pm"],
       "requiresProjectWorkspace": true,
       "adapterType": "hermes_local",
-      "adapterConfig": { "cwd": "${PROJECT_WORKSPACE}", "model": "gpt-5.6-sol", "provider": "openai-codex", "toolsets": "terminal,file,web", "timeoutSec": 600, "persistSession": true, "instructionsFilePath": "${MMF_STUDIO_REPO_ROOT}/templates/paperclip-agents/messaging-copy-research-specialist/agents.md" },
+      "adapterConfig": { "cwd": "${PROJECT_WORKSPACE}", "model": "gpt-5.6-terra", "provider": "openai-codex", "toolsets": "terminal,file,web", "timeoutSec": 600, "persistSession": true, "instructionsFilePath": "${MMF_STUDIO_REPO_ROOT}/templates/paperclip-agents/messaging-copy-research-specialist/agents.md" },
       "runtimeConfig": { "heartbeat": { "enabled": false, "wakeOnDemand": true, "maxConcurrentRuns": 1 } },
       "permissions": { "canCreateAgents": false, "canCreateSkills": false },
       "budgetMonthlyCents": 0
@@ -123,7 +123,7 @@
       "allowedParentRoles": ["pm"],
       "requiresProjectWorkspace": true,
       "adapterType": "hermes_local",
-      "adapterConfig": { "cwd": "${PROJECT_WORKSPACE}", "model": "gpt-5.6-sol", "provider": "openai-codex", "toolsets": "terminal,file", "timeoutSec": 600, "persistSession": true, "instructionsFilePath": "${MMF_STUDIO_REPO_ROOT}/templates/paperclip-agents/data-narrative-analysis-specialist/agents.md" },
+      "adapterConfig": { "cwd": "${PROJECT_WORKSPACE}", "model": "gpt-5.6-terra", "provider": "openai-codex", "toolsets": "terminal,file", "timeoutSec": 600, "persistSession": true, "instructionsFilePath": "${MMF_STUDIO_REPO_ROOT}/templates/paperclip-agents/data-narrative-analysis-specialist/agents.md" },
       "runtimeConfig": { "heartbeat": { "enabled": false, "wakeOnDemand": true, "maxConcurrentRuns": 1 } },
       "permissions": { "canCreateAgents": false, "canCreateSkills": false },
       "budgetMonthlyCents": 0
@@ -174,7 +174,7 @@
       "allowedParentRoles": ["pm"],
       "requiresProjectWorkspace": true,
       "adapterType": "hermes_local",
-      "adapterConfig": { "cwd": "${PROJECT_WORKSPACE}", "model": "gpt-5.6-sol", "provider": "openai-codex", "toolsets": "terminal,file", "timeoutSec": 600, "persistSession": true, "instructionsFilePath": "${MMF_STUDIO_REPO_ROOT}/templates/paperclip-agents/copy-editing-specialist/agents.md" },
+      "adapterConfig": { "cwd": "${PROJECT_WORKSPACE}", "model": "gpt-5.6-terra", "provider": "openai-codex", "toolsets": "terminal,file", "timeoutSec": 600, "persistSession": true, "instructionsFilePath": "${MMF_STUDIO_REPO_ROOT}/templates/paperclip-agents/copy-editing-specialist/agents.md" },
       "runtimeConfig": { "heartbeat": { "enabled": false, "wakeOnDemand": true, "maxConcurrentRuns": 1 } },
       "permissions": { "canCreateAgents": false, "canCreateSkills": false },
       "budgetMonthlyCents": 0
