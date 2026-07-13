@@ -83,6 +83,28 @@ class DriveBrainImportTests(unittest.TestCase):
         self.assertEqual(os.stat(proposal).st_mode & 0o777, 0o600)
         self.assertFalse(any(path.name.startswith(".acme-website.staging") for path in self.brain_root.iterdir()))
 
+    def test_duplicate_canonical_sources_are_preserved(self):
+        data = json.loads(self.fixture.read_text(encoding="utf-8"))
+        data["items"].append({
+            "id": "proposal_abcdef12", "name": "Revised Proposal",
+            "mimeType": "application/vnd.google-apps.document",
+            "modifiedTime": "2026-07-03T10:00:00Z",
+            "webViewLink": "https://docs.google.com/document/d/proposal_abcdef12/edit",
+            "path": "Acme Client Project/Proposal/Revised Proposal",
+            "content": "# Revised scope\nDo not overwrite the first proposal.",
+        })
+        duplicate_fixture = self.root / "drive-duplicates.json"
+        duplicate_fixture.write_text(json.dumps(data), encoding="utf-8")
+        result = compile_brain(
+            drive=FixtureDrive(duplicate_fixture), folder_id="folder_1234567890",
+            project_name="Duplicate Sources", project_slug="duplicate-sources",
+            brain_root=self.brain_root, template_root=self.template, dry_run=False,
+        )
+        proposals = sorted((Path(result["targetPath"]) / "01_onboarding").glob("proposal*.md"))
+        self.assertEqual(len(proposals), 2)
+        self.assertTrue(any("Conversion strategy" in path.read_text() for path in proposals))
+        self.assertTrue(any("Do not overwrite" in path.read_text() for path in proposals))
+
     def test_existing_project_brain_fails_without_modifying_it(self):
         target = self.brain_root / "acme-website"
         target.mkdir(parents=True)
