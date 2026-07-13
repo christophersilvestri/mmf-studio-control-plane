@@ -7,6 +7,27 @@ import type {
 import { api } from "./client";
 import { sanitizeWorkspaceRuntimeControlTarget } from "./workspace-runtime-control";
 
+export interface DriveBrainPreview {
+  ok: true;
+  folderId: string;
+  folderName?: string;
+  targetPath: string;
+  inventoryCount: number;
+  files: Array<Record<string, unknown>>;
+}
+
+export interface DriveBrainProjectResult {
+  project: Project;
+  brain: {
+    folderName?: string;
+    folderUrl?: string;
+    targetPath: string;
+    inventoryCount: number;
+    importedCount: number;
+    skippedCount: number;
+  };
+}
+
 function withCompanyScope(path: string, companyId?: string) {
   if (!companyId) return path;
   const separator = path.includes("?") ? "&" : "?";
@@ -22,6 +43,10 @@ export const projectsApi = {
   get: (id: string, companyId?: string) => api.get<Project>(projectPath(id, companyId)),
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Project>(`/companies/${companyId}/projects`, data),
+  previewDriveBrain: (companyId: string, data: Record<string, unknown>) =>
+    api.post<DriveBrainPreview>(`/companies/${companyId}/projects/drive-brain-preview`, data),
+  createFromDrive: (companyId: string, data: Record<string, unknown>) =>
+    api.post<DriveBrainProjectResult>(`/companies/${companyId}/projects/from-drive`, data),
   update: (id: string, data: Record<string, unknown>, companyId?: string) =>
     api.patch<Project>(projectPath(id, companyId), data),
   listWorkspaces: (projectId: string, companyId?: string) =>

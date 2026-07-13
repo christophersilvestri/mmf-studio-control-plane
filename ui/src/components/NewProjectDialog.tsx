@@ -28,6 +28,7 @@ import {
   X,
   HelpCircle,
   BriefcaseBusiness,
+  Cloud,
   GitBranch,
 } from "lucide-react";
 import {
@@ -60,7 +61,9 @@ export function NewProjectDialog() {
   const [expanded, setExpanded] = useState(false);
   const [workspaceLocalPath, setWorkspaceLocalPath] = useState("");
   const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState("");
-  const [workspaceKind, setWorkspaceKind] = useState<"knowledge" | "code">("knowledge");
+  const [workspaceDriveFolder, setWorkspaceDriveFolder] = useState("");
+  const [workspaceKind, setWorkspaceKind] = useState<"knowledge" | "drive" | "code">("knowledge");
+  const [validatedDriveRef, setValidatedDriveRef] = useState("");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
   const [statusOpen, setStatusOpen] = useState(false);
@@ -97,6 +100,16 @@ export function NewProjectDialog() {
       projectsApi.create(selectedCompanyId!, data),
   });
 
+  const previewDriveBrain = useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      projectsApi.previewDriveBrain(selectedCompanyId!, data),
+  });
+
+  const createDriveProject = useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      projectsApi.createFromDrive(selectedCompanyId!, data),
+  });
+
   const uploadDescriptionImage = useMutation({
     mutationFn: async (file: File) => {
       if (!selectedCompanyId) throw new Error("No company selected");
@@ -113,7 +126,10 @@ export function NewProjectDialog() {
     setExpanded(false);
     setWorkspaceLocalPath("");
     setWorkspaceRepoUrl("");
+    setWorkspaceDriveFolder("");
     setWorkspaceKind("knowledge");
+    setValidatedDriveRef("");
+    previewDriveBrain.reset();
     setWorkspaceError(null);
   }
 
@@ -153,10 +169,18 @@ export function NewProjectDialog() {
     const repoUrl = workspaceRepoUrl.trim();
 
     if (workspaceKind === "knowledge" && !localPath) {
-      setWorkspaceError("Knowledge-work projects need a private local client folder.");
+      setWorkspaceError("Local knowledge projects need a private client folder.");
       return;
     }
-    if (localPath && !isAbsolutePath(localPath)) {
+    if (workspaceKind === "drive" && !workspaceDriveFolder.trim()) {
+      setWorkspaceError("Paste the shared Google Drive folder link.");
+      return;
+    }
+    if (workspaceKind === "drive" && validatedDriveRef !== workspaceDriveFolder.trim()) {
+      setWorkspaceError("Validate this Google Drive folder before creating the project.");
+      return;
+    }
+    if (workspaceKind !== "drive" && localPath && !isAbsolutePath(localPath)) {
       setWorkspaceError("Local folder must be a full absolute path.");
       return;
     }
@@ -168,16 +192,22 @@ export function NewProjectDialog() {
     setWorkspaceError(null);
 
     try {
-      const created = await createProject.mutateAsync({
+      const projectPayload = {
         name: name.trim(),
         description: description.trim() || undefined,
         status,
         // No color is sent — new projects persist color = null (neutral gray). See PAP-68.
         ...(goalIds.length > 0 ? { goalIds } : {}),
         ...(targetDate ? { targetDate } : {}),
-      });
+      };
+      const created = workspaceKind === "drive"
+        ? (await createDriveProject.mutateAsync({
+            ...projectPayload,
+            driveFolderRef: workspaceDriveFolder.trim(),
+          })).project
+        : await createProject.mutateAsync(projectPayload);
 
-      if (localPath || repoUrl) {
+      if (workspaceKind !== "drive" && (localPath || repoUrl)) {
         const workspacePayload: Record<string, unknown> = {
           name: localPath
             ? deriveWorkspaceNameFromPath(localPath)
@@ -211,6 +241,8 @@ export function NewProjectDialog() {
 
   const selectedGoals = (goals ?? []).filter((g) => goalIds.includes(g.id));
   const availableGoals = (goals ?? []).filter((g) => !goalIds.includes(g.id));
+  const isCreating = createProject.isPending || createDriveProject.isPending;
+  const createFailed = createProject.isError || createDriveProject.isError;
 
   return (
     <Dialog
@@ -295,7 +327,7 @@ export function NewProjectDialog() {
         <div className="px-4 pt-3 pb-3 space-y-3 border-t border-border">
           <div>
             <div className="mb-1.5 text-xs font-medium text-foreground">Project workspace</div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <button
                 type="button"
                 onClick={() => { setWorkspaceKind("knowledge"); setWorkspaceRepoUrl(""); setWorkspaceError(null); }}
@@ -308,8 +340,29 @@ export function NewProjectDialog() {
               >
                 <BriefcaseBusiness className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>
-                  <span className="block text-xs font-medium">Knowledge workspace</span>
-                  <span className="mt-0.5 block text-[11px] leading-4">Private client files. No Git required.</span>
+                  <span className="block text-xs font-medium">Local folder</span>
+                  <span className="mt-0.5 block text-[11px] leading-4">Existing private Markdown workspace.</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setWorkspaceKind("drive");
+                  setWorkspaceLocalPath("");
+                  setWorkspaceRepoUrl("");
+                  setWorkspaceError(null);
+                }}
+                className={cn(
+                  "flex items-start gap-2 rounded-md border px-3 py-2 text-left transition-colors",
+                  workspaceKind === "drive"
+                    ? "border-primary bg-primary/8 text-foreground"
+                    : "border-border text-muted-foreground hover:bg-accent/50",
+                )}
+              >
+                <Cloud className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  <span className="block text-xs font-medium">Google Drive</span>
+                  <span className="mt-0.5 block text-[11px] leading-4">Compile a shared folder into a project brain.</span>
                 </span>
               </button>
               <button
@@ -331,58 +384,111 @@ export function NewProjectDialog() {
             </div>
           </div>
 
-          {workspaceKind === "code" ? (
-            <div>
-              <div className="mb-1 flex items-center gap-1.5">
-                <label className="block text-xs text-muted-foreground">Repo URL</label>
-                <span className="text-xs text-muted-foreground/50">optional</span>
-                <Tooltip delayDuration={300}>
-                  <TooltipTrigger asChild>
-                    <HelpCircle className="h-3 w-3 text-muted-foreground/50 cursor-help" />
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-(--sz-240px) text-xs">
-                    Link a GitHub repository so agents can clone, read, and push code for this project.
-                  </TooltipContent>
-                </Tooltip>
+          {workspaceKind === "drive" ? (
+            <div className="space-y-2 rounded-md border border-primary/20 bg-primary/5 p-3">
+              <div>
+                <label className="block text-xs font-medium text-foreground">Shared Google Drive folder</label>
+                <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+                  Read-only import. Paperclip converts supported sources into a private Markdown project brain.
+                </p>
               </div>
-              <input
-                className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
-                value={workspaceRepoUrl}
-                onChange={(e) => { setWorkspaceRepoUrl(e.target.value); setWorkspaceError(null); }}
-                placeholder="https://github.com/org/repo"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-xs outline-none"
+                  value={workspaceDriveFolder}
+                  onChange={(event) => {
+                    setWorkspaceDriveFolder(event.target.value);
+                    setValidatedDriveRef("");
+                    previewDriveBrain.reset();
+                    setWorkspaceError(null);
+                  }}
+                  placeholder="https://drive.google.com/drive/folders/..."
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!name.trim() || !workspaceDriveFolder.trim() || previewDriveBrain.isPending}
+                  onClick={async () => {
+                    try {
+                      await previewDriveBrain.mutateAsync({
+                        name: name.trim(),
+                        status,
+                        driveFolderRef: workspaceDriveFolder.trim(),
+                      });
+                      setValidatedDriveRef(workspaceDriveFolder.trim());
+                      setWorkspaceError(null);
+                    } catch (error) {
+                      setValidatedDriveRef("");
+                      setWorkspaceError(error instanceof Error ? error.message : "Could not validate this Drive folder.");
+                    }
+                  }}
+                >
+                  {previewDriveBrain.isPending ? "Checking…" : "Validate"}
+                </Button>
+              </div>
+              {previewDriveBrain.data && validatedDriveRef === workspaceDriveFolder.trim() ? (
+                <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                  Ready: {previewDriveBrain.data.folderName ?? "Drive folder"} · {previewDriveBrain.data.inventoryCount} source files
+                </p>
+              ) : null}
             </div>
           ) : (
-            <p className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] leading-4 text-muted-foreground">
-              Agents work directly in this private Mac mini folder. MMF Studio records it as non-Git knowledge work.
-            </p>
-          )}
+            <>
+              {workspaceKind === "code" ? (
+                <div>
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <label className="block text-xs text-muted-foreground">Repo URL</label>
+                    <span className="text-xs text-muted-foreground/50">optional</span>
+                    <Tooltip delayDuration={300}>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-3 w-3 text-muted-foreground/50 cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-(--sz-240px) text-xs">
+                        Link a GitHub repository so agents can clone, read, and push code for this project.
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <input
+                    className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+                    value={workspaceRepoUrl}
+                    onChange={(e) => { setWorkspaceRepoUrl(e.target.value); setWorkspaceError(null); }}
+                    placeholder="https://github.com/org/repo"
+                  />
+                </div>
+              ) : (
+                <p className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] leading-4 text-muted-foreground">
+                  Agents work directly in this existing private Markdown folder on the Mac mini.
+                </p>
+              )}
 
-          <div>
-            <div className="mb-1 flex items-center gap-1.5">
-              <label className="block text-xs text-muted-foreground">
-                {workspaceKind === "knowledge" ? "Private client folder" : "Local folder"}
-              </label>
-              <span className="text-xs text-muted-foreground/50">{workspaceKind === "knowledge" ? "required" : "optional"}</span>
-              <Tooltip delayDuration={300}>
-                <TooltipTrigger asChild>
-                  <HelpCircle className="h-3 w-3 text-muted-foreground/50 cursor-help" />
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-(--sz-240px) text-xs">
-                  Set an absolute path on this machine where local agents will read and write files for this project.
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
-                value={workspaceLocalPath}
-                onChange={(e) => { setWorkspaceLocalPath(e.target.value); setWorkspaceError(null); }}
-                placeholder="/absolute/path/to/workspace"
-              />
-              <ChoosePathButton />
-            </div>
-          </div>
+              <div>
+                <div className="mb-1 flex items-center gap-1.5">
+                  <label className="block text-xs text-muted-foreground">
+                    {workspaceKind === "knowledge" ? "Private client folder" : "Local folder"}
+                  </label>
+                  <span className="text-xs text-muted-foreground/50">{workspaceKind === "knowledge" ? "required" : "optional"}</span>
+                  <Tooltip delayDuration={300}>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-3 w-3 text-muted-foreground/50 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-(--sz-240px) text-xs">
+                      Set an absolute path on this machine where local agents will read and write files for this project.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                    value={workspaceLocalPath}
+                    onChange={(e) => { setWorkspaceLocalPath(e.target.value); setWorkspaceError(null); }}
+                    placeholder="/absolute/path/to/workspace"
+                  />
+                  <ChoosePathButton />
+                </div>
+              </div>
+            </>
+          )}
 
           {workspaceError && (
             <p className="text-xs text-destructive">{workspaceError}</p>
@@ -486,17 +592,17 @@ export function NewProjectDialog() {
 
         {/* Footer */}
         <div className="flex items-center justify-between px-4 py-2.5 border-t border-border">
-          {createProject.isError ? (
-            <p className="text-xs text-destructive">Failed to create project.</p>
+          {createFailed ? (
+            <p className="text-xs text-destructive">Failed to create project. No partial project brain was kept.</p>
           ) : (
             <span />
           )}
           <Button
             size="sm"
-            disabled={!name.trim() || createProject.isPending}
+            disabled={!name.trim() || isCreating || (workspaceKind === "drive" && validatedDriveRef !== workspaceDriveFolder.trim())}
             onClick={handleSubmit}
           >
-            {createProject.isPending ? "Creating…" : "Create project"}
+            {isCreating ? (workspaceKind === "drive" ? "Building project brain…" : "Creating…") : "Create project"}
           </Button>
         </div>
       </DialogContent>

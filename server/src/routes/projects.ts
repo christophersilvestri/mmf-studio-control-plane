@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import type { Db } from "@paperclipai/db";
 import {
   createProjectSchema,
+  createDriveBrainProjectSchema,
   createProjectWorkspaceSchema,
   findWorkspaceCommandDefinition,
   isUuidLike,
@@ -14,7 +15,7 @@ import type { WorkspaceRuntimeDesiredState, WorkspaceRuntimeServiceStateMap } fr
 import { trackProjectCreated } from "@paperclipai/shared/telemetry";
 import { validate } from "../middleware/validate.js";
 import { accessService, projectService, logActivity, workspaceOperationService } from "../services/index.js";
-import { conflict, forbidden } from "../errors.js";
+import { conflict, forbidden, unprocessable } from "../errors.js";
 import { externalObjectService } from "../services/external-objects.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -35,6 +36,7 @@ import { getTelemetryClient } from "../telemetry.js";
 import { appendWithCap } from "../adapters/utils.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
 import { environmentService } from "../services/environments.js";
+import { driveBrainImporter } from "../services/mmf-drive-brain.js";
 import { secretService } from "../services/secrets.js";
 
 const WORKSPACE_CONTROL_OUTPUT_MAX_CHARS = 256 * 1024;
@@ -47,6 +49,7 @@ export function projectRoutes(db: Db) {
   const secretsSvc = secretService(db);
   const workspaceOperations = workspaceOperationService(db);
   const instanceSettings = instanceSettingsService(db);
+  const driveBrains = driveBrainImporter();
   const externalObjectsSvc = externalObjectService(db, {
     enabled: async () => (await instanceSettings.getExperimental()).enableExternalObjects === true,
   });
@@ -155,6 +158,120 @@ export function projectRoutes(db: Db) {
     assertCompanyAccess(req, project.companyId);
     const summary = await externalObjectsSvc.getProjectSummary(project.id);
     res.json(summary);
+  });
+
+  router.post("/companies/:companyId/projects/drive-brain-preview", validate(createDriveBrainProjectSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { driveFolderRef, projectBrainSlug, name } = req.body as {
+      driveFolderRef: string; projectBrainSlug?: string; name: string;
+    };
+    try {
+      const result = await driveBrains.run({
+        folderRef: driveFolderRef, projectName: name, projectSlug: projectBrainSlug, dryRun: true,
+      });
+      res.json({
+        ok: true,
+        folderId: result.folderId,
+        folderName: result.folderName,
+        targetPath: result.targetPath,
+        inventoryCount: result.inventoryCount,
+        files: result.files ?? [],
+      });
+    } catch (error) {
+      throw unprocessable(error instanceof Error ? error.message : "Google Drive folder validation failed");
+    }
+  });
+
+  router.post("/companies/:companyId/projects/from-drive", validate(createDriveBrainProjectSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { driveFolderRef, projectBrainSlug, ...projectData } = req.body as Record<string, unknown> & {
+      driveFolderRef: string; projectBrainSlug?: string; name: string;
+    };
+    await assertProjectEnvironmentSelection(
+      companyId,
+      readProjectPolicyEnvironmentId(projectData.executionWorkspacePolicy),
+    );
+    assertNoAgentHostWorkspaceCommandMutation(req, collectProjectExecutionWorkspaceCommandPaths(projectData.executionWorkspacePolicy));
+    if (projectData.env !== undefined) {
+      projectData.env = await secretsSvc.normalizeEnvBindingsForPersistence(
+        companyId,
+        projectData.env,
+        { strictMode: strictSecretsMode, fieldPath: "env" },
+      );
+    }
+
+    let brain: Awaited<ReturnType<typeof driveBrains.run>> | null = null;
+    let project: Awaited<ReturnType<typeof svc.create>> | null = null;
+    try {
+      brain = await driveBrains.run({
+        folderRef: driveFolderRef,
+        projectName: String(projectData.name),
+        projectSlug: projectBrainSlug,
+      });
+      project = await svc.create(companyId, projectData as Parameters<typeof svc.create>[1]);
+      const workspace = await svc.createWorkspace(project.id, {
+        name: `${brain.folderName || project.name} brain`,
+        sourceType: "non_git_path",
+        cwd: brain.targetPath,
+        remoteProvider: "google_drive",
+        remoteWorkspaceRef: brain.folderId,
+        isPrimary: true,
+        metadata: {
+          sourceSystem: "google_drive",
+          sourceFolderName: brain.folderName ?? null,
+          sourceFolderUrl: brain.folderUrl ?? null,
+          manifestPath: brain.manifestPath ?? null,
+          inventoryCount: brain.inventoryCount,
+          importedCount: brain.importedCount ?? 0,
+          skippedCount: brain.skippedCount ?? 0,
+        },
+      });
+      if (!workspace) throw new Error("Paperclip rejected the compiled project brain workspace");
+      if (project.env) {
+        await secretsSvc.syncEnvBindingsForTarget?.(
+          companyId,
+          { targetType: "project", targetId: project.id },
+          project.env,
+        );
+      }
+      const hydrated = await svc.getById(project.id);
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "project.created_from_drive_brain",
+        entityType: "project",
+        entityId: project.id,
+        details: {
+          workspaceId: workspace.id,
+          driveFolderId: brain.folderId,
+          inventoryCount: brain.inventoryCount,
+          importedCount: brain.importedCount ?? 0,
+          skippedCount: brain.skippedCount ?? 0,
+        },
+      });
+      const telemetryClient = getTelemetryClient();
+      if (telemetryClient) trackProjectCreated(telemetryClient);
+      res.status(201).json({
+        project: hydrated ?? project,
+        brain: {
+          folderName: brain.folderName,
+          folderUrl: brain.folderUrl,
+          targetPath: brain.targetPath,
+          inventoryCount: brain.inventoryCount,
+          importedCount: brain.importedCount ?? 0,
+          skippedCount: brain.skippedCount ?? 0,
+        },
+      });
+    } catch (error) {
+      if (project) await svc.remove(project.id).catch(() => undefined);
+      if (brain) await driveBrains.rollback(brain).catch(() => undefined);
+      throw unprocessable(error instanceof Error ? error.message : "Google Drive project brain creation failed");
+    }
   });
 
   router.post("/companies/:companyId/projects", validate(createProjectSchema), async (req, res) => {

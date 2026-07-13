@@ -290,12 +290,14 @@ export {
 
 export {
   createProjectSchema,
+  createDriveBrainProjectSchema,
   updateProjectSchema,
   createProjectWorkspaceSchema,
   updateProjectWorkspaceSchema,
   projectExecutionWorkspacePolicySchema,
   projectWorkspaceRuntimeConfigSchema,
   type CreateProject,
+  type CreateDriveBrainProject,
   type UpdateProject,
   type CreateProjectWorkspace,
   type UpdateProjectWorkspace,

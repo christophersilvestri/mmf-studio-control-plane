@@ -118,6 +118,14 @@ export const createProjectSchema = z.object({
   workspace: createProjectWorkspaceSchema.optional(),
 });
 
+export const createDriveBrainProjectSchema = z.object({
+  ...projectFields,
+  driveFolderRef: z.string().min(1),
+  projectBrainSlug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(80).optional(),
+});
+
+export type CreateDriveBrainProject = z.infer<typeof createDriveBrainProjectSchema>;
+
 export type CreateProject = z.infer<typeof createProjectSchema>;
 
 export const updateProjectSchema = z.object(projectFields).partial();
