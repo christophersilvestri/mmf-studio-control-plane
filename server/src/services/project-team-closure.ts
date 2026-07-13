@@ -7,6 +7,11 @@ import { agentService } from "./agents.js";
 import { approvalService } from "./approvals.js";
 import { heartbeatService } from "./heartbeat.js";
 import { projectService } from "./projects.js";
+import {
+  projectTaskArchivalService,
+  type ProjectTaskArchivePreview,
+  type ProjectTaskArchiveResult,
+} from "./project-task-archival.js";
 
 type AgentCandidate = {
   id: string;
@@ -64,6 +69,7 @@ export interface ClosurePreview {
   projectName: string;
   included: ClosureAgentTarget[];
   excluded: ClosureAgentTarget[];
+  tasks: ProjectTaskArchivePreview;
 }
 
 export interface ClosureResult extends ClosurePreview {
@@ -75,6 +81,7 @@ export interface ClosureResult extends ClosurePreview {
   cancelledWakeupCount: number;
   archived: boolean;
   terminationOrder: string[];
+  taskArchive: ProjectTaskArchiveResult;
 }
 
 export interface TeamClosureActor {
@@ -88,6 +95,7 @@ export function projectTeamClosureService(db: Db) {
   const approvalsSvc = approvalService(db);
   const heartbeatsSvc = heartbeatService(db);
   const projectsSvc = projectService(db);
+  const projectTasks = projectTaskArchivalService(db);
 
   async function preview(projectId: string): Promise<ClosurePreview> {
     const project = await projectsSvc.getById(projectId);
@@ -130,7 +138,8 @@ export function projectTeamClosureService(db: Db) {
       return Number(isOrchestratorRole(leftAgent)) - Number(isOrchestratorRole(rightAgent));
     });
 
-    return { projectId, projectName: project.name, included, excluded };
+    const tasks = await projectTasks.preview(project.id, project.companyId);
+    return { projectId, projectName: project.name, included, excluded, tasks };
   }
 
   async function close(
@@ -172,6 +181,8 @@ export function projectTeamClosureService(db: Db) {
       }
     }
 
+    const taskArchive = await projectTasks.archive(project.id, project.companyId);
+
     let archived = Boolean(project.archivedAt);
     if (archiveAfterClose && !archived) {
       const updated = await projectsSvc.update(projectId, { archivedAt: new Date() });
@@ -196,6 +207,7 @@ export function projectTeamClosureService(db: Db) {
         cancelledWakeupCount: cancellation.wakeupsCancelled,
         terminationOrder: targetIds,
         archived,
+        taskArchive,
       },
     });
 
@@ -207,6 +219,7 @@ export function projectTeamClosureService(db: Db) {
       cancelledWakeupCount: cancellation.wakeupsCancelled,
       archived,
       terminationOrder: targetIds,
+      taskArchive,
     };
   }
 

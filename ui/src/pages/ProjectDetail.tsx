@@ -544,7 +544,7 @@ export function ProjectDetail() {
       invalidateProject();
       void closurePreviewQuery.refetch();
       pushToast({
-        title: `${result.archived ? "Project team closed and project archived" : "Project team closed"}: ${result.terminatedCount} agents terminated, ${result.cancelledRunCount} runs cancelled`,
+        title: `${result.archived ? "Project team closed and project archived" : "Project team closed"}: ${result.terminatedCount} agents terminated, ${result.taskArchive.totalCount} tasks archived`,
         tone: "success",
       });
     },
@@ -886,7 +886,7 @@ export function ProjectDetail() {
             <AlertDialogHeader>
               <AlertDialogTitle>Close project team</AlertDialogTitle>
               <AlertDialogDescription>
-                This will terminate all active agents associated with this project. This action cannot be undone.
+                This will terminate the project team, cancel unfinished tasks, and archive all project tasks. History and completed work are preserved.
               </AlertDialogDescription>
             </AlertDialogHeader>
 
@@ -929,6 +929,13 @@ export function ProjectDetail() {
                   </div>
                 )}
 
+                <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+                  <p className="font-medium">Tasks to archive ({closurePreviewQuery.data.tasks.totalCount})</p>
+                  <p className="mt-1 text-muted-foreground">
+                    {closurePreviewQuery.data.tasks.openCount} unfinished tasks will be cancelled; {closurePreviewQuery.data.tasks.doneCount} completed tasks will stay done.
+                  </p>
+                </div>
+
                 <div className="space-y-2">
                   <label className="block">
                     <span className="text-sm font-medium">Type <span className="font-mono text-destructive">{project?.name}</span> to confirm:</span>
@@ -970,7 +977,7 @@ export function ProjectDetail() {
                   closureProjectNameInput !== project?.name ||
                   closurePreviewQuery.isLoading ||
                   closeTeamMutation.isPending ||
-                  (closurePreviewQuery.data?.included.length === 0 && !closureArchiveChecked)
+                  (closurePreviewQuery.data?.included.length === 0 && closurePreviewQuery.data?.tasks.totalCount === 0 && !closureArchiveChecked)
                 }
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >

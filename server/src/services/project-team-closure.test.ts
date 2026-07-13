@@ -6,12 +6,14 @@ const agentServiceMock = vi.hoisted(() => ({ terminate: vi.fn(), getById: vi.fn(
 const approvals = vi.hoisted(() => ({ findOpenHireApprovalForAgent: vi.fn(), reject: vi.fn() }));
 const heartbeats = vi.hoisted(() => ({ cancelInvocationsForAgents: vi.fn() }));
 const logActivity = vi.hoisted(() => vi.fn());
+const projectTasks = vi.hoisted(() => ({ preview: vi.fn(), archive: vi.fn() }));
 
 vi.mock("./projects.js", () => ({ projectService: () => projects }));
 vi.mock("./agents.js", () => ({ agentService: () => agentServiceMock }));
 vi.mock("./approvals.js", () => ({ approvalService: () => approvals }));
 vi.mock("./heartbeat.js", () => ({ heartbeatService: () => heartbeats }));
 vi.mock("./activity-log.js", () => ({ logActivity }));
+vi.mock("./project-task-archival.js", () => ({ projectTaskArchivalService: () => projectTasks }));
 
 import {
   isActiveAgent,
@@ -46,6 +48,15 @@ beforeEach(() => {
     return { applied: true };
   });
   heartbeats.cancelInvocationsForAgents.mockResolvedValue({ runsCancelled: 2, wakeupsCancelled: 1 });
+  projectTasks.preview.mockResolvedValue({
+    projectId: "project-1", totalCount: 4, openCount: 2, doneCount: 1,
+    cancelledCount: 1, hiddenCount: 0, activeRunCount: 1,
+  });
+  projectTasks.archive.mockResolvedValue({
+    projectId: "project-1", totalCount: 4, openCount: 0, doneCount: 1,
+    cancelledCount: 3, hiddenCount: 4, activeRunCount: 0,
+    newlyCancelledCount: 2, newlyHiddenCount: 4, cancelledTaskRunCount: 1,
+  });
   agentServiceMock.terminate.mockImplementation(async (id: string) => {
     statuses.set(id, "terminated");
     return { id, status: "terminated" };

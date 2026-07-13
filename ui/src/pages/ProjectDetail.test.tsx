@@ -173,11 +173,14 @@ describe("ProjectDetail", () => {
       excluded: [
         { agentId: "director-1", name: "MMF Studio Director", role: "ceo", reason: "Permanent agent protected by lifecycle policy", pendingApprovalId: null },
       ],
+      tasks: { projectId: "project-1", totalCount: 3, openCount: 2, doneCount: 1, cancelledCount: 0, hiddenCount: 0, activeRunCount: 1 },
     });
     mockProjectsApi.closeTeam.mockResolvedValue({
       projectId: "project-1", projectName: "Managed Project", included: [], excluded: [],
+      tasks: { projectId: "project-1", totalCount: 3, openCount: 2, doneCount: 1, cancelledCount: 0, hiddenCount: 0, activeRunCount: 1 },
       terminatedCount: 2, rejectedApprovalCount: 0, cancelledRunCount: 1,
       cancelledWakeupCount: 0, archived: false, terminationOrder: ["specialist-1", "orchestrator-1"],
+      taskArchive: { projectId: "project-1", totalCount: 3, openCount: 0, doneCount: 1, cancelledCount: 2, hiddenCount: 3, activeRunCount: 0, newlyCancelledCount: 2, newlyHiddenCount: 3, cancelledTaskRunCount: 1 },
     });
     mockIssuesApi.list.mockResolvedValue([]);
     mockAgentsApi.list.mockResolvedValue([]);

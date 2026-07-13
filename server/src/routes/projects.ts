@@ -39,6 +39,7 @@ import { assertEnvironmentSelectionForCompany } from "./environment-selection.js
 import { environmentService } from "../services/environments.js";
 import { driveBrainImporter } from "../services/mmf-drive-brain.js";
 import { projectTeamClosureService } from "../services/project-team-closure.js";
+import { projectTaskArchivalService } from "../services/project-task-archival.js";
 import { secretService } from "../services/secrets.js";
 
 const WORKSPACE_CONTROL_OUTPUT_MAX_CHARS = 256 * 1024;
@@ -62,6 +63,7 @@ export function projectRoutes(db: Db) {
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
   const environmentsSvc = environmentService(db);
   const closureSvc = projectTeamClosureService(db);
+  const projectTasks = projectTaskArchivalService(db);
 
   async function assertProjectEnvironmentSelection(companyId: string, environmentId: string | null | undefined) {
     if (environmentId === undefined || environmentId === null) return;
@@ -400,6 +402,14 @@ export function projectRoutes(db: Db) {
     if (typeof body.archivedAt === "string") {
       body.archivedAt = new Date(body.archivedAt);
     }
+    const isArchivingProject = existing.archivedAt === null && body.archivedAt instanceof Date;
+    if (isArchivingProject) {
+      if (req.actor.type !== "board") {
+        res.status(403).json({ error: "Board access required" });
+        return;
+      }
+      assertBoard(req);
+    }
     if (body.env !== undefined) {
       body.env = await secretsSvc.normalizeEnvBindingsForPersistence(existing.companyId, body.env, {
         strictMode: strictSecretsMode,
@@ -410,6 +420,15 @@ export function projectRoutes(db: Db) {
     if (!project) {
       res.status(404).json({ error: "Project not found" });
       return;
+    }
+    let taskArchive = null;
+    if (isArchivingProject) {
+      try {
+        taskArchive = await projectTasks.archive(project.id, project.companyId);
+      } catch (error) {
+        await svc.update(project.id, { archivedAt: existing.archivedAt });
+        throw error;
+      }
     }
     if (body.env !== undefined) {
       await secretsSvc.syncEnvBindingsForTarget?.(
@@ -430,6 +449,7 @@ export function projectRoutes(db: Db) {
       entityId: project.id,
       details: {
         changedKeys: Object.keys(req.body).sort(),
+        taskArchive,
         envKeys:
           body.env && typeof body.env === "object" && !Array.isArray(body.env)
             ? Object.keys(body.env as Record<string, unknown>).sort()

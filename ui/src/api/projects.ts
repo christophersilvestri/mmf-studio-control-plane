@@ -94,6 +94,17 @@ export interface ClosurePreview {
   projectName: string;
   included: { agentId: string; name: string; role: string | null; reason: string; pendingApprovalId: string | null }[];
   excluded: { agentId: string; name: string; role: string | null; reason: string; pendingApprovalId: string | null }[];
+  tasks: ProjectTaskArchivePreview;
+}
+
+export interface ProjectTaskArchivePreview {
+  projectId: string;
+  totalCount: number;
+  openCount: number;
+  doneCount: number;
+  cancelledCount: number;
+  hiddenCount: number;
+  activeRunCount: number;
 }
 
 export interface ClosureResult extends ClosurePreview {
@@ -103,6 +114,11 @@ export interface ClosureResult extends ClosurePreview {
   cancelledWakeupCount: number;
   archived: boolean;
   terminationOrder: string[];
+  taskArchive: ProjectTaskArchivePreview & {
+    newlyCancelledCount: number;
+    newlyHiddenCount: number;
+    cancelledTaskRunCount: number;
+  };
 }
 
 export interface CloseTeamOptions {

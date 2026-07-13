@@ -8,8 +8,10 @@ const projectService = vi.hoisted(() => ({
   removeWorkspace: vi.fn(), resolveByReference: vi.fn(),
 }));
 const closureService = vi.hoisted(() => ({ preview: vi.fn(), close: vi.fn() }));
+const projectTasks = vi.hoisted(() => ({ preview: vi.fn(), archive: vi.fn() }));
 
 vi.mock("../services/project-team-closure.js", () => ({ projectTeamClosureService: () => closureService }));
+vi.mock("../services/project-task-archival.js", () => ({ projectTaskArchivalService: () => projectTasks }));
 vi.mock("../telemetry.js", () => ({ getTelemetryClient: () => null }));
 vi.mock("../services/index.js", () => ({
   accessService: () => ({ decide: vi.fn().mockResolvedValue({ allowed: true }) }),
@@ -37,7 +39,7 @@ async function makeApp(actor: Record<string, unknown>) {
   return app;
 }
 
-const project = { id: "project-1", companyId: "company-1", name: "Acme", urlKey: "acme" };
+const project = { id: "project-1", companyId: "company-1", name: "Acme", urlKey: "acme", archivedAt: null };
 const board = {
   type: "board", userId: "board-user", companyIds: ["company-1"],
   source: "local_implicit", isInstanceAdmin: false,
@@ -47,9 +49,11 @@ describe("project team closure routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     projectService.getById.mockResolvedValue(project);
+    projectService.update.mockImplementation(async (_id, patch) => ({ ...project, ...patch }));
     projectService.resolveByReference.mockResolvedValue({ ambiguous: false, project: null });
     closureService.preview.mockResolvedValue({ projectId: "project-1", projectName: "Acme", included: [], excluded: [] });
     closureService.close.mockResolvedValue({ projectId: "project-1", projectName: "Acme", included: [], excluded: [], terminatedCount: 0 });
+    projectTasks.archive.mockResolvedValue({ projectId: "project-1", totalCount: 3, newlyCancelledCount: 2, newlyHiddenCount: 3 });
   });
 
   it("returns a non-destructive preview to an authorized board user", async () => {
@@ -75,5 +79,21 @@ describe("project team closure routes", () => {
       "project-1", "Acme", true,
       { actorType: "user", actorId: "board-user", agentId: null },
     );
+  });
+
+  it("archives project tasks when a board user archives the project", async () => {
+    const response = await request(await makeApp(board))
+      .patch("/api/projects/project-1")
+      .send({ archivedAt: "2026-07-13T17:00:00.000Z" });
+    expect(response.status).toBe(200);
+    expect(projectTasks.archive).toHaveBeenCalledWith("project-1", "company-1");
+  });
+
+  it("blocks agents from project archival now that it archives tasks", async () => {
+    const response = await request(await makeApp({
+      type: "agent", agentId: "agent-1", companyId: "company-1", source: "agent_key",
+    })).patch("/api/projects/project-1").send({ archivedAt: "2026-07-13T17:00:00.000Z" });
+    expect(response.status).toBe(403);
+    expect(projectTasks.archive).not.toHaveBeenCalled();
   });
 });

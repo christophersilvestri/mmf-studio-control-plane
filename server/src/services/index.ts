@@ -28,6 +28,8 @@ export {
   refreshIssueContinuationSummary,
 } from "./issue-continuation-summary.js";
 export { projectService } from "./projects.js";
+export { projectTeamClosureService } from "./project-team-closure.js";
+export { projectTaskArchivalService } from "./project-task-archival.js";
 
 export {
   clampIssueListLimit,
