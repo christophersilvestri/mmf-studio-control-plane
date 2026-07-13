@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -31,6 +31,7 @@ type AgentOption = {
 type ProjectOption = {
   id: string;
   name: string;
+  archivedAt?: string | Date | null;
 };
 
 type LabelOption = {
@@ -81,6 +82,18 @@ export function IssueFiltersPopover({
   creators?: CreatorOption[];
 }) {
   const [creatorSearch, setCreatorSearch] = useState("");
+  const activeProjects = useMemo(
+    () => projects?.filter((project) => !project.archivedAt),
+    [projects],
+  );
+  useEffect(() => {
+    if (!projects) return;
+    const activeProjectIds = new Set(activeProjects?.map((project) => project.id) ?? []);
+    const validSelectedProjects = state.projects.filter((projectId) => activeProjectIds.has(projectId));
+    if (validSelectedProjects.length !== state.projects.length) {
+      onChange({ projects: validSelectedProjects });
+    }
+  }, [activeProjects, onChange, projects, state.projects]);
   const creatorOptions = creators ?? [];
   const creatorOptionById = useMemo(
     () => new Map(creatorOptions.map((option) => [option.id, option])),
@@ -295,11 +308,11 @@ export function IssueFiltersPopover({
                 </div>
               ) : null}
 
-              {projects && projects.length > 0 ? (
+              {activeProjects && activeProjects.length > 0 ? (
                 <div className="space-y-1">
                   <span className="text-xs text-muted-foreground">Project</span>
                   <div className="max-h-32 space-y-0.5 overflow-y-auto">
-                    {projects.map((project) => (
+                    {activeProjects.map((project) => (
                       <label key={project.id} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
                         <Checkbox
                           checked={state.projects.includes(project.id)}

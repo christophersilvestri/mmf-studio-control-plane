@@ -2208,7 +2208,7 @@ export function Inbox() {
                 activeFilterCount={activeIssueFilterCount}
                 agents={agents}
                 creators={creatorOptions}
-                projects={projects?.map((project) => ({ id: project.id, name: project.name }))}
+                projects={projects?.map((project) => ({ id: project.id, name: project.name, archivedAt: project.archivedAt }))}
                 labels={labels?.map((label) => ({ id: label.id, name: label.name, color: label.color }))}
                 currentUserId={currentUserId}
                 enableExternalObjectFilters={externalObjectsEnabled}
@@ -2306,7 +2306,7 @@ export function Inbox() {
                 activeFilterCount={activeIssueFilterCount}
                 agents={agents}
                 creators={creatorOptions}
-                projects={projects?.map((project) => ({ id: project.id, name: project.name }))}
+                projects={projects?.map((project) => ({ id: project.id, name: project.name, archivedAt: project.archivedAt }))}
                 labels={labels?.map((label) => ({ id: label.id, name: label.name, color: label.color }))}
                 currentUserId={currentUserId}
                 enableExternalObjectFilters={externalObjectsEnabled}

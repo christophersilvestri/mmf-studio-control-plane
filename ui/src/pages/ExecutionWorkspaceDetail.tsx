@@ -470,7 +470,7 @@ function ExecutionWorkspaceIssuesList({
   });
 
   const projectOptions = useMemo(
-    () => (project ? [{ id: project.id, name: project.name, workspaces: project.workspaces ?? [] }] : undefined),
+    () => (project ? [{ id: project.id, name: project.name, archivedAt: project.archivedAt, workspaces: project.workspaces ?? [] }] : undefined),
     [project],
   );
   const createIssueDefaults = useMemo(

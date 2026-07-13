@@ -403,7 +403,7 @@ type CreatorOption = {
   searchText?: string;
 };
 
-type ProjectOption = Pick<Project, "id" | "name"> & Partial<Pick<Project, "color" | "workspaces" | "executionWorkspacePolicy" | "primaryWorkspace">>;
+type ProjectOption = Pick<Project, "id" | "name" | "archivedAt"> & Partial<Pick<Project, "color" | "workspaces" | "executionWorkspacePolicy" | "primaryWorkspace">>;
 type IssueListRequestFilters = NonNullable<Parameters<typeof issuesApi.list>[1]>;
 
 interface IssuesListProps {
@@ -1746,7 +1746,7 @@ export function IssuesList({
             activeFilterCount={activeFilterCount}
             agents={agents}
             creators={creatorOptions}
-            projects={projects?.map((project) => ({ id: project.id, name: project.name }))}
+            projects={projects?.map((project) => ({ id: project.id, name: project.name, archivedAt: project.archivedAt }))}
             labels={labels?.map((label) => ({ id: label.id, name: label.name, color: label.color }))}
             currentUserId={currentUserId}
             enableExternalObjectFilters={externalObjectsEnabled}
