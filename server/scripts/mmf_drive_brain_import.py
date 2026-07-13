@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
@@ -244,6 +245,7 @@ def compile_brain(*, drive: Any, folder_id: str, project_name: str, project_slug
     os.chmod(brain_root, 0o700)
     stage = brain_root / f".{project_slug}.staging-{uuid.uuid4().hex}"
     records: list[dict[str, Any]] = []
+    used_targets: set[str] = set()
     try:
         shutil.copytree(template_root, stage)
         for item in inventory:
@@ -256,6 +258,11 @@ def compile_brain(*, drive: Any, folder_id: str, project_name: str, project_slug
             normalized = normalized_text(text)
             digest = content_hash(normalized)
             relative_target = classify_target(str(item.get("name", "source")), str(item.get("path", "")), str(item["id"]))
+            if relative_target.as_posix() in used_targets:
+                relative_target = relative_target.with_name(
+                    f"{relative_target.stem}-{str(item['id'])[:8]}{relative_target.suffix}"
+                )
+            used_targets.add(relative_target.as_posix())
             output = stage / relative_target
             output.parent.mkdir(parents=True, exist_ok=True)
             rendered = source_frontmatter(item, digest) + normalized
@@ -271,6 +278,7 @@ def compile_brain(*, drive: Any, folder_id: str, project_name: str, project_slug
             "folderUrl": folder.get("webViewLink"),
             "projectName": project_name,
             "projectSlug": project_slug,
+            "importedAt": datetime.now(timezone.utc).isoformat(),
             "records": records,
         }
         context = stage / "00_project-context"
