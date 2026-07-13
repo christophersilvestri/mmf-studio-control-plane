@@ -59,6 +59,11 @@
     "test:release-smoke": "npx playwright test --config tests/release-smoke/playwright.config.ts",
     "test:release-smoke:headed": "npx playwright test --config tests/release-smoke/playwright.config.ts --headed",
     "metrics:paperclip-commits": "tsx scripts/paperclip-commit-metrics.ts",
+    "acceptance:mmf-lifecycle:test": "vitest run --config scripts/mmf-lifecycle/vitest.config.ts",
+    "acceptance:mmf-lifecycle:dry-run": "tsx scripts/mmf-lifecycle/run-full-lifecycle-acceptance.ts --dry-run",
+    "acceptance:mmf-lifecycle:repeat3": "tsx scripts/mmf-lifecycle/run-full-lifecycle-acceptance.ts --dry-run --repeat=3",
+    "acceptance:mmf-lifecycle:preflight": "tsx scripts/mmf-lifecycle/run-full-lifecycle-acceptance.ts --preflight --paperclip-url=http://127.0.0.1:3111 --company-name=MMF\\ Studio\\ Lab --safety-acknowledgement",
+    "acceptance:mmf-lifecycle:live": "tsx scripts/mmf-lifecycle/run-full-lifecycle-acceptance.ts --live --repeat=3 --paperclip-url=http://127.0.0.1:3111 --company-name=MMF\\ Studio\\ Lab --safety-acknowledgement --arm-full-lifecycle",
     "perf:issue-chat-long-thread": "node scripts/measure-issue-chat-long-thread.mjs"
   },
   "devDependencies": {
