@@ -168,6 +168,11 @@ export function projectRoutes(db: Db) {
   });
 
   router.post("/companies/:companyId/projects/drive-brain-preview", validate(createDriveBrainProjectSchema), async (req, res) => {
+    if (req.actor.type !== "board") {
+      res.status(403).json({ error: "Board access required" });
+      return;
+    }
+    assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const { driveFolderRef, projectBrainSlug, name } = req.body as {
@@ -191,6 +196,11 @@ export function projectRoutes(db: Db) {
   });
 
   router.post("/companies/:companyId/projects/from-drive", validate(createDriveBrainProjectSchema), async (req, res) => {
+    if (req.actor.type !== "board") {
+      res.status(403).json({ error: "Board access required" });
+      return;
+    }
+    assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const { driveFolderRef, projectBrainSlug, ...projectData } = req.body as Record<string, unknown> & {

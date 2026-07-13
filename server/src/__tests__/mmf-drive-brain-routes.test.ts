@@ -26,17 +26,17 @@ vi.mock("../services/workspace-runtime.js", () => ({
   startRuntimeServicesForWorkspaceControl: vi.fn(), stopRuntimeServicesForProjectWorkspace: vi.fn(),
 }));
 
-async function app() {
+async function app(actor: Record<string, unknown> = {
+  type: "board", userId: "board-user", companyIds: ["company-1"],
+  source: "local_implicit", isInstanceAdmin: false,
+}) {
   const [{ projectRoutes }, { errorHandler }] = await Promise.all([
     import("../routes/projects.js"), import("../middleware/index.js"),
   ]);
   const instance = express();
   instance.use(express.json());
   instance.use((req, _res, next) => {
-    (req as any).actor = {
-      type: "board", userId: "board-user", companyIds: ["company-1"],
-      source: "local_implicit", isInstanceAdmin: false,
-    };
+    (req as any).actor = actor;
     next();
   });
   instance.use("/api", projectRoutes({} as any));
@@ -60,6 +60,16 @@ describe("Google Drive project brain routes", () => {
     projectService.resolveByReference.mockResolvedValue({ ambiguous: false, project: null });
     projectService.remove.mockResolvedValue(project);
     driveBrains.rollback.mockResolvedValue(undefined);
+  });
+
+  it("blocks agents from probing Drive through the service account", async () => {
+    const response = await request(await app({
+      type: "agent", agentId: "agent-1", companyId: "company-1", source: "agent_key",
+    }))
+      .post("/api/companies/company-1/projects/drive-brain-preview")
+      .send({ name: "Acme", status: "planned", driveFolderRef: brainResult.folderUrl });
+    expect(response.status).toBe(403);
+    expect(driveBrains.run).not.toHaveBeenCalled();
   });
 
   it("validates the Drive folder without creating a project", async () => {
