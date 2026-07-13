@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { z } from "zod";
 import type { Db } from "@paperclipai/db";
 import {
   createProjectSchema,
@@ -18,7 +19,7 @@ import { accessService, projectService, logActivity, workspaceOperationService }
 import { conflict, forbidden, unprocessable } from "../errors.js";
 import { externalObjectService } from "../services/external-objects.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
-import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import {
   buildWorkspaceRuntimeDesiredStatePatch,
   listConfiguredRuntimeServiceEntries,
@@ -37,9 +38,14 @@ import { appendWithCap } from "../adapters/utils.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
 import { environmentService } from "../services/environments.js";
 import { driveBrainImporter } from "../services/mmf-drive-brain.js";
+import { projectTeamClosureService } from "../services/project-team-closure.js";
 import { secretService } from "../services/secrets.js";
 
 const WORKSPACE_CONTROL_OUTPUT_MAX_CHARS = 256 * 1024;
+const closeProjectTeamSchema = z.object({
+  projectName: z.string().min(1),
+  archiveAfterClose: z.boolean().optional().default(false),
+});
 const SHARED_WORKSPACE_STOP_AND_RESTART_ACTIONS = new Set(["stop", "restart"]);
 
 export function projectRoutes(db: Db) {
@@ -55,6 +61,7 @@ export function projectRoutes(db: Db) {
   });
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
   const environmentsSvc = environmentService(db);
+  const closureSvc = projectTeamClosureService(db);
 
   async function assertProjectEnvironmentSelection(companyId: string, environmentId: string | null | undefined) {
     if (environmentId === undefined || environmentId === null) return;
@@ -835,6 +842,43 @@ export function projectRoutes(db: Db) {
     });
 
     res.json(project);
+  });
+
+  router.get("/projects/:id/team-closure/preview", async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const preview = await closureSvc.preview(id);
+    res.json(preview);
+  });
+
+  router.post("/projects/:id/team-closure/close", validate(closeProjectTeamSchema), async (req, res) => {
+    if (req.actor.type !== "board") {
+      res.status(403).json({ error: "Board access required" });
+      return;
+    }
+    assertBoard(req);
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+
+    const { projectName, archiveAfterClose } = req.body as z.infer<typeof closeProjectTeamSchema>;
+    const actor = getActorInfo(req);
+    if (actor.actorType !== "user") throw forbidden("Board user access required");
+    const result = await closureSvc.close(id, projectName, archiveAfterClose, {
+      actorType: "user",
+      actorId: actor.actorId,
+      agentId: null,
+    });
+    res.json(result);
   });
 
   return router;

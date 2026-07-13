@@ -14,6 +14,8 @@ const mockProjectsApi = vi.hoisted(() => ({
   get: vi.fn(),
   list: vi.fn(),
   update: vi.fn(),
+  previewTeamClosure: vi.fn(),
+  closeTeam: vi.fn(),
 }));
 const mockIssuesApi = vi.hoisted(() => ({
   list: vi.fn(),
@@ -161,6 +163,22 @@ describe("ProjectDetail", () => {
     document.body.appendChild(container);
     mockProjectsApi.get.mockResolvedValue(project());
     mockProjectsApi.list.mockResolvedValue([project()]);
+    mockProjectsApi.previewTeamClosure.mockResolvedValue({
+      projectId: "project-1",
+      projectName: "Managed Project",
+      included: [
+        { agentId: "specialist-1", name: "Researcher", role: "researcher", reason: "Active project agent", pendingApprovalId: null },
+        { agentId: "orchestrator-1", name: "Orchestrator", role: "manager", reason: "Active project agent", pendingApprovalId: null },
+      ],
+      excluded: [
+        { agentId: "director-1", name: "MMF Studio Director", role: "ceo", reason: "Permanent agent protected by lifecycle policy", pendingApprovalId: null },
+      ],
+    });
+    mockProjectsApi.closeTeam.mockResolvedValue({
+      projectId: "project-1", projectName: "Managed Project", included: [], excluded: [],
+      terminatedCount: 2, rejectedApprovalCount: 0, cancelledRunCount: 1,
+      cancelledWakeupCount: 0, archived: false, terminationOrder: ["specialist-1", "orchestrator-1"],
+    });
     mockIssuesApi.list.mockResolvedValue([]);
     mockAgentsApi.list.mockResolvedValue([]);
     mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([]);
@@ -209,5 +227,37 @@ describe("ProjectDetail", () => {
       projectId: "project-1",
       originKindPrefix: "plugin:paperclip.missions",
     });
+  });
+
+  it("previews the exact project team and requires typed confirmation before closure", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<QueryClientProvider client={queryClient}><ProjectDetail /></QueryClientProvider>);
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain("Close project team…"));
+    const trigger = Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent?.trim() === "Close project team…") as HTMLButtonElement;
+    await act(async () => { trigger.click(); });
+    await vi.waitFor(() => expect(mockProjectsApi.previewTeamClosure).toHaveBeenCalled());
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Researcher"));
+    expect(document.body.textContent).toContain("MMF Studio Director — Permanent agent protected by lifecycle policy");
+
+    const input = document.body.querySelector('input[placeholder="Managed Project"]') as HTMLInputElement;
+    const confirm = Array.from(document.body.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent?.trim() === "Close project team") as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, "Managed Project");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(confirm.disabled).toBe(false);
+    await act(async () => { confirm.click(); });
+    await vi.waitFor(() => expect(mockProjectsApi.closeTeam).toHaveBeenCalledWith(
+      "project-1",
+      { projectName: "Managed Project", archiveAfterClose: false },
+      "company-1",
+    ));
   });
 });

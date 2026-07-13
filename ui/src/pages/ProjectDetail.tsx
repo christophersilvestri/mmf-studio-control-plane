@@ -13,6 +13,17 @@ import { assetsApi } from "../api/assets";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useToastActions } from "../context/ToastContext";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { ProjectProperties, type ProjectConfigFieldKey, type ProjectFieldSaveState } from "../components/ProjectProperties";
@@ -377,6 +388,9 @@ export function ProjectDetail() {
   const location = useLocation();
   const [fieldSaveStates, setFieldSaveStates] = useState<Partial<Record<ProjectConfigFieldKey, ProjectFieldSaveState>>>({});
   const [dismissedLeftProjectIds, setDismissedLeftProjectIds] = useState<Set<string>>(() => new Set());
+  const [closureDialogOpen, setClosureDialogOpen] = useState(false);
+  const [closureProjectNameInput, setClosureProjectNameInput] = useState("");
+  const [closureArchiveChecked, setClosureArchiveChecked] = useState(false);
   const fieldSaveRequestIds = useRef<Partial<Record<ProjectConfigFieldKey, number>>>({});
   const fieldSaveTimers = useRef<Partial<Record<ProjectConfigFieldKey, ReturnType<typeof setTimeout>>>>({});
   const routeProjectRef = projectId ?? "";
@@ -504,6 +518,38 @@ export function ProjectDetail() {
         title: archived ? "Failed to archive project" : "Failed to unarchive project",
         tone: "error",
       });
+    },
+  });
+
+  // Team closure preview query
+  const closurePreviewQuery = useQuery({
+    queryKey: [...queryKeys.projects.detail(routeProjectRef), "team-closure", lookupCompanyId ?? null],
+    queryFn: () => projectsApi.previewTeamClosure(projectLookupRef, resolvedCompanyId ?? lookupCompanyId),
+    enabled: false, // Only enabled when dialog is open
+  });
+
+  const closeTeamMutation = useMutation({
+    mutationFn: async () => {
+      const result = await projectsApi.closeTeam(
+        projectLookupRef,
+        { projectName: closureProjectNameInput, archiveAfterClose: closureArchiveChecked },
+        resolvedCompanyId ?? lookupCompanyId,
+      );
+      return result;
+    },
+    onSuccess: (result) => {
+      setClosureDialogOpen(false);
+      setClosureProjectNameInput("");
+      setClosureArchiveChecked(false);
+      invalidateProject();
+      void closurePreviewQuery.refetch();
+      pushToast({
+        title: `${result.archived ? "Project team closed and project archived" : "Project team closed"}: ${result.terminatedCount} agents terminated, ${result.cancelledRunCount} runs cancelled`,
+        tone: "success",
+      });
+    },
+    onError: (err: Error) => {
+      pushToast({ title: `Failed to close team: ${err.message}`, tone: "error" });
     },
   });
 
@@ -826,6 +872,113 @@ export function ProjectDetail() {
             })}
           />
         </div>
+        {/* Close project team button */}
+        <AlertDialog open={closureDialogOpen} onOpenChange={setClosureDialogOpen}>
+          <AlertDialogTrigger asChild onClick={() => {
+            setClosureDialogOpen(true);
+            void closurePreviewQuery.refetch();
+          }}>
+            <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10">
+              Close project team…
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent className="max-w-lg">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Close project team</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will terminate all active agents associated with this project. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            {closurePreviewQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground py-2">Loading preview…</p>
+            ) : closurePreviewQuery.isError ? (
+              <p className="text-sm text-destructive py-2">Failed to load preview</p>
+            ) : closurePreviewQuery.data ? (
+              <div className="space-y-4 py-2">
+                {closurePreviewQuery.data.included.length > 0 ? (
+                  <div>
+                    <p className="text-sm font-medium mb-2">Agents to be terminated ({closurePreviewQuery.data.included.length}):</p>
+                    <ul className="text-sm text-muted-foreground space-y-1 max-h-40 overflow-y-auto">
+                      {closurePreviewQuery.data.included.map((agent) => (
+                        <li key={agent.agentId} className="flex items-start gap-2">
+                          <span className="text-destructive mt-0.5">•</span>
+                          <span>{agent.name}</span>
+                          {agent.pendingApprovalId && (
+                            <span className="text-xs text-muted-foreground">(pending approval)</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No agents will be terminated.</p>
+                )}
+
+                {closurePreviewQuery.data.excluded.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium mb-1 text-muted-foreground">Excluded agents:</p>
+                    <ul className="text-sm text-muted-foreground space-y-1 max-h-32 overflow-y-auto">
+                      {closurePreviewQuery.data.excluded.map((agent) => (
+                        <li key={agent.agentId} className="flex items-start gap-2">
+                          <span className="mt-0.5">•</span>
+                          <span>{agent.name} — {agent.reason}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <label className="block">
+                    <span className="text-sm font-medium">Type <span className="font-mono text-destructive">{project?.name}</span> to confirm:</span>
+                    <Input
+                      value={closureProjectNameInput}
+                      onChange={(e) => setClosureProjectNameInput(e.target.value)}
+                      placeholder={project?.name ?? ""}
+                      className="mt-1"
+                    />
+                  </label>
+
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={closureArchiveChecked}
+                      onChange={(e) => setClosureArchiveChecked(e.target.checked)}
+                      className="rounded border-input"
+                    />
+                    Also archive the project
+                  </label>
+                </div>
+              </div>
+            ) : null}
+
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => {
+                setClosureDialogOpen(false);
+                setClosureProjectNameInput("");
+                setClosureArchiveChecked(false);
+              }}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  closeTeamMutation.mutate();
+                }}
+                disabled={
+                  closureProjectNameInput !== project?.name ||
+                  closurePreviewQuery.isLoading ||
+                  closeTeamMutation.isPending ||
+                  (closurePreviewQuery.data?.included.length === 0 && !closureArchiveChecked)
+                }
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {closeTeamMutation.isPending ? "Closing…" : "Close project team"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       <PluginSlotOutlet

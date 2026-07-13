@@ -83,4 +83,29 @@ export const projectsApi = {
   removeWorkspace: (projectId: string, workspaceId: string, companyId?: string) =>
     api.delete<ProjectWorkspace>(projectPath(projectId, companyId, `/workspaces/${encodeURIComponent(workspaceId)}`)),
   remove: (id: string, companyId?: string) => api.delete<Project>(projectPath(id, companyId)),
+  previewTeamClosure: (projectId: string, companyId?: string) =>
+    api.get<ClosurePreview>(projectPath(projectId, companyId, "/team-closure/preview")),
+  closeTeam: (projectId: string, options: CloseTeamOptions, companyId?: string) =>
+    api.post<ClosureResult>(projectPath(projectId, companyId, "/team-closure/close"), options),
 };
+
+export interface ClosurePreview {
+  projectId: string;
+  projectName: string;
+  included: { agentId: string; name: string; role: string | null; reason: string; pendingApprovalId: string | null }[];
+  excluded: { agentId: string; name: string; role: string | null; reason: string; pendingApprovalId: string | null }[];
+}
+
+export interface ClosureResult extends ClosurePreview {
+  terminatedCount: number;
+  rejectedApprovalCount: number;
+  cancelledRunCount: number;
+  cancelledWakeupCount: number;
+  archived: boolean;
+  terminationOrder: string[];
+}
+
+export interface CloseTeamOptions {
+  projectName: string;
+  archiveAfterClose?: boolean;
+}
