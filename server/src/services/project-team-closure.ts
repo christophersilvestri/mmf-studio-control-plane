@@ -67,7 +67,9 @@ export interface ClosurePreview {
 }
 
 export interface ClosureResult extends ClosurePreview {
+  /** Total included agents verified as terminated; rejectedApprovalCount is a subset of this total. */
   terminatedCount: number;
+  /** Included pending hires resolved by rejecting their open hire approval. */
   rejectedApprovalCount: number;
   cancelledRunCount: number;
   cancelledWakeupCount: number;
@@ -108,7 +110,9 @@ export function projectTeamClosureService(db: Db) {
     const excluded: ClosureAgentTarget[] = [];
 
     for (const agent of linked) {
-      const pendingApproval = await approvalsSvc.findOpenHireApprovalForAgent(project.companyId, agent.id);
+      const pendingApproval = agent.status === "pending_approval"
+        ? await approvalsSvc.findOpenHireApprovalForAgent(project.companyId, agent.id)
+        : null;
       const target: ClosureAgentTarget = {
         agentId: agent.id,
         name: agent.name ?? "Unknown Agent",

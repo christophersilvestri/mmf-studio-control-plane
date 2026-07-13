@@ -45,6 +45,7 @@ class DriveBrainImportTests(unittest.TestCase):
                 {
                     "id": "video_12345678", "name": "Call recording.mp4",
                     "mimeType": "video/mp4", "modifiedTime": "2026-07-02T10:00:00Z",
+                    "size": 60 * 1024 * 1024,
                     "webViewLink": "https://drive.google.com/file/d/video_12345678/view",
                     "path": "Acme Client Project/Calls/Call recording.mp4",
                 },
@@ -79,6 +80,10 @@ class DriveBrainImportTests(unittest.TestCase):
         manifest = json.loads((target / "00_project-context/drive-import-manifest.json").read_text())
         self.assertEqual(manifest["folderId"], "folder_1234567890")
         self.assertEqual(len(manifest["records"]), 3)
+        self.assertEqual(
+            next(record["reason"] for record in manifest["records"] if record["id"] == "video_12345678"),
+            "source_too_large",
+        )
         self.assertEqual(os.stat(target).st_mode & 0o777, 0o700)
         self.assertEqual(os.stat(proposal).st_mode & 0o777, 0o600)
         self.assertFalse(any(path.name.startswith(".acme-website.staging") for path in self.brain_root.iterdir()))
@@ -104,6 +109,19 @@ class DriveBrainImportTests(unittest.TestCase):
         self.assertEqual(len(proposals), 2)
         self.assertTrue(any("Conversion strategy" in path.read_text() for path in proposals))
         self.assertTrue(any("Do not overwrite" in path.read_text() for path in proposals))
+
+    def test_concurrent_import_lock_fails_closed_without_removing_owner_lock(self):
+        self.brain_root.mkdir(parents=True)
+        lock = self.brain_root / ".locked-project.import.lock"
+        lock.write_text("pid=123\n", encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "already running"):
+            compile_brain(
+                drive=self.drive, folder_id="folder_1234567890", project_name="Locked Project",
+                project_slug="locked-project", brain_root=self.brain_root,
+                template_root=self.template, dry_run=False,
+            )
+        self.assertEqual(lock.read_text(encoding="utf-8"), "pid=123\n")
+        self.assertFalse((self.brain_root / "locked-project").exists())
 
     def test_existing_project_brain_fails_without_modifying_it(self):
         target = self.brain_root / "acme-website"

@@ -23,6 +23,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
+MAX_SOURCE_FILES = 2_000
+MAX_SOURCE_BYTES = 50 * 1024 * 1024
+MAX_EXTRACTED_BYTES = 10 * 1024 * 1024
 DOC_MIME = "application/vnd.google-apps.document"
 SHEET_MIME = "application/vnd.google-apps.spreadsheet"
 SLIDE_MIME = "application/vnd.google-apps.presentation"
@@ -125,7 +128,7 @@ class GoogleDrive:
 
     @staticmethod
     def fields() -> str:
-        return "id,name,mimeType,modifiedTime,webViewLink,parents,driveId,capabilities(canListChildren)"
+        return "id,name,mimeType,modifiedTime,webViewLink,parents,driveId,size,capabilities(canListChildren)"
 
     def validate_folder(self, folder_id: str) -> dict[str, Any]:
         result = self.service.files().get(
@@ -223,17 +226,19 @@ def compile_brain(*, drive: Any, folder_id: str, project_name: str, project_slug
                   brain_root: Path, template_root: Path, dry_run: bool) -> dict[str, Any]:
     folder = drive.validate_folder(folder_id)
     inventory = drive.inventory(folder_id)
+    if len(inventory) > MAX_SOURCE_FILES:
+        raise ValueError(f"Drive folder contains {len(inventory)} files; limit is {MAX_SOURCE_FILES}")
     inventory.sort(key=lambda item: (str(item.get("path", "")).lower(), str(item.get("id", ""))))
     target = (brain_root / project_slug).resolve()
     brain_root_resolved = brain_root.resolve()
     if brain_root_resolved not in target.parents:
         raise ValueError("Project brain path escaped the configured brain root")
-    if target.exists():
-        raise FileExistsError(f"Project brain already exists: {target}")
     if not template_root.is_dir():
         raise FileNotFoundError(f"MMF project brain template not found: {template_root}")
 
     if dry_run:
+        if target.exists():
+            raise FileExistsError(f"Project brain already exists: {target}")
         return {
             "ok": True, "dryRun": True, "folderId": folder_id,
             "folderName": folder.get("name"), "targetPath": str(target),
@@ -244,18 +249,35 @@ def compile_brain(*, drive: Any, folder_id: str, project_name: str, project_slug
     brain_root.mkdir(parents=True, exist_ok=True)
     os.chmod(brain_root, 0o700)
     stage = brain_root / f".{project_slug}.staging-{uuid.uuid4().hex}"
+    lock_path = brain_root / f".{project_slug}.import.lock"
+    lock_fd: int | None = None
     records: list[dict[str, Any]] = []
     used_targets: set[str] = set()
     try:
+        try:
+            lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError as error:
+            raise RuntimeError(f"An import is already running for project brain: {project_slug}") from error
+        os.write(lock_fd, f"pid={os.getpid()}\n".encode("utf-8"))
+        if target.exists():
+            raise FileExistsError(f"Project brain already exists: {target}")
         shutil.copytree(template_root, stage)
         for item in inventory:
-            text, error = drive.extract(item)
             record = {k: item.get(k) for k in ("id", "name", "mimeType", "modifiedTime", "webViewLink", "path")}
+            if int(item.get("size") or 0) > MAX_SOURCE_BYTES:
+                record.update({"status": "skipped", "reason": "source_too_large"})
+                records.append(record)
+                continue
+            text, error = drive.extract(item)
             if text is None:
                 record.update({"status": "skipped", "reason": error})
                 records.append(record)
                 continue
             normalized = normalized_text(text)
+            if len(normalized.encode("utf-8")) > MAX_EXTRACTED_BYTES:
+                record.update({"status": "skipped", "reason": "extracted_text_too_large"})
+                records.append(record)
+                continue
             digest = content_hash(normalized)
             relative_target = classify_target(str(item.get("name", "source")), str(item.get("path", "")), str(item["id"]))
             if relative_target.as_posix() in used_targets:
@@ -295,6 +317,10 @@ def compile_brain(*, drive: Any, folder_id: str, project_name: str, project_slug
     except Exception:
         shutil.rmtree(stage, ignore_errors=True)
         raise
+    finally:
+        if lock_fd is not None:
+            os.close(lock_fd)
+            lock_path.unlink(missing_ok=True)
 
     imported = sum(1 for record in records if record["status"] == "imported")
     return {

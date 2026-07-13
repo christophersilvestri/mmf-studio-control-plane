@@ -285,9 +285,30 @@ export function projectRoutes(db: Db) {
         },
       });
     } catch (error) {
-      if (project) await svc.remove(project.id).catch(() => undefined);
-      if (brain) await driveBrains.rollback(brain).catch(() => undefined);
-      throw unprocessable(error instanceof Error ? error.message : "Google Drive project brain creation failed");
+      const cleanupFailures: string[] = [];
+      if (project) {
+        try {
+          await svc.remove(project.id);
+        } catch (cleanupError) {
+          cleanupFailures.push("project");
+          console.error("Failed to roll back Google Drive project", cleanupError);
+        }
+      }
+      if (brain) {
+        try {
+          await driveBrains.rollback(brain);
+        } catch (cleanupError) {
+          cleanupFailures.push("project_brain");
+          console.error("Failed to roll back Google Drive project brain", cleanupError);
+        }
+      }
+      const message = error instanceof Error ? error.message : "Google Drive project brain creation failed";
+      throw unprocessable(
+        cleanupFailures.length > 0
+          ? `${message}. Automatic cleanup failed for: ${cleanupFailures.join(", ")}. Manual cleanup is required.`
+          : message,
+        cleanupFailures.length > 0 ? { cleanupFailures } : undefined,
+      );
     }
   });
 

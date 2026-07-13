@@ -100,6 +100,22 @@ describe("Google Drive project brain routes", () => {
     expect(driveBrains.rollback).not.toHaveBeenCalled();
   });
 
+  it("surfaces rollback failures that require manual cleanup", async () => {
+    driveBrains.run.mockResolvedValue(brainResult);
+    projectService.create.mockResolvedValue(project);
+    projectService.createWorkspace.mockResolvedValue(null);
+    projectService.remove.mockRejectedValue(new Error("db unavailable"));
+    driveBrains.rollback.mockRejectedValue(new Error("filesystem unavailable"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const response = await request(await app())
+      .post("/api/companies/company-1/projects/from-drive")
+      .send({ name: "Acme", status: "planned", driveFolderRef: brainResult.folderUrl });
+    consoleError.mockRestore();
+    expect(response.status).toBe(422);
+    expect(response.body.error).toContain("Manual cleanup is required");
+    expect(response.body.details).toEqual({ cleanupFailures: ["project", "project_brain"] });
+  });
+
   it("rolls back both project and brain when workspace attachment fails", async () => {
     driveBrains.run.mockResolvedValue(brainResult);
     projectService.create.mockResolvedValue(project);
