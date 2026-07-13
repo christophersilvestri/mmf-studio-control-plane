@@ -6,7 +6,7 @@ This harness verifies the complete Paperclip project lifecycle contract (`docs/s
 
 **Key properties:**
 - `--dry-run` mode: deterministic fake simulation with isolated in-memory state
-- `--live` mode: **always fails closed** in the CLI, regardless of environment flags
+- `--live` mode: real Lab-only execution behind exact loopback/company/allowlist, acknowledgement, environment, arm, and repeat-count gates
 - `--preflight` mode: GET-only checks against an explicit Paperclip URL/company; mutation routes are schema-verified only
 - Synthetic workspaces only (never touches real client data)
 - Board hire-approval and bounded-decision simulation (via polling)
@@ -15,7 +15,7 @@ This harness verifies the complete Paperclip project lifecycle contract (`docs/s
 - repeat=3 independent projects
 - Machine-readable receipts for all 14 phases
 - Dry-run receipts assert zero active runs/pending gates and the required termination order
-- Equivalent real-Lab closure invariants are targets, not yet live-certified
+- Real-Lab closure is certified by three consecutive 14-phase disposable projects (`live-20260713132718`)
 - History never deleted
 
 ---
@@ -23,29 +23,29 @@ This harness verifies the complete Paperclip project lifecycle contract (`docs/s
 ## Quick Start
 
 ```bash
-cd /tmp/mmf-lifecycle-harness-approved/apps/studio-web
+cd /Users/christophersilvestri/Code/conversion-alchemy/mmf-studio-paperclip
 
 # Dry-run (default — safe, no mutations, always works)
-npm run acceptance:lifecycle:dry-run
+pnpm acceptance:mmf-lifecycle:dry-run
 
 # Three independent project runs
-npm run acceptance:lifecycle:repeat3
+pnpm acceptance:mmf-lifecycle:repeat3
 
 # Run GET-only route preflight against the isolated Lab
-npm run acceptance:lifecycle:preflight
+pnpm acceptance:mmf-lifecycle:preflight
 
-# Prove live mode fails closed before any mutation
-node scripts/run-full-lifecycle-acceptance.ts --live
+# Unarmed live execution fails before mutation
+pnpm acceptance:mmf-lifecycle:live
 
 # Show help
-node scripts/run-full-lifecycle-acceptance.ts --help
+pnpm exec tsx scripts/mmf-lifecycle/run-full-lifecycle-acceptance.ts --help
 ```
 
 ---
 
 ## Modes
 
-### `--dry-run` (default and only working mode for simulation)
+### `--dry-run` (default simulation mode)
 
 Runs the full 14-phase lifecycle using `FakePaperclip` — a pure in-memory, deterministic simulation. No network, no filesystem, no real Paperclip.
 
@@ -55,11 +55,11 @@ Runs the full 14-phase lifecycle using `FakePaperclip` — a pure in-memory, det
 - Full 14-phase contract exercised
 - Machine-readable receipts produced
 
-### `--live` (unconditionally disabled)
+### `--live` (explicit Lab-only acceptance)
 
-The CLI exits non-zero before constructing an adapter or orchestrator. Setting `LIVECLI_ORCHESTRATOR_ENABLED=true` does not bypass this block.
+Live execution requires every gate: exact `http://127.0.0.1:3111`, exact company and sole allowlist entry `MMF Studio Lab`, `--safety-acknowledgement`, `--arm-full-lifecycle`, `--repeat=3`, and `LIVECLI_ORCHESTRATOR_ENABLED=true`. Any missing or mismatched gate exits before mutation.
 
-`RealLifecycleOrchestrator` has a separate constructor activation gate and requires a `dryRun: false` adapter as defense in depth, but it is not wired to the CLI and is not release-approved. Enabling it requires an explicit code change after independent review—not an environment variable alone.
+The live path is independently reviewed and certified against three consecutive disposable 14-phase projects. It uses real Board decision endpoints under the same Lab-only safety gate and never injects fake statuses.
 
 The `RealLifecycleOrchestrator` uses the `PaperclipLifecycleAdapter` for all live operations:
 - Project creation, issue creation, status updates, comments
@@ -84,7 +84,7 @@ run-full-lifecycle-acceptance.ts
 ├── fake-adapter.ts               # Deterministic isolated Paperclip adapter (fake only)
 ├── paperclipAdapter.ts           # Route-accurate Paperclip API adapter (dryRun-aware)
 ├── paperclipAdapter.test.ts      # Exact method/path/body + safety/read-back contract tests
-├── RealLifecycleOrchestrator.ts  # Paperclip-backed candidate; not CLI-wired or approved
+├── RealLifecycleOrchestrator.ts  # Approved Paperclip-backed live orchestrator
 └── RealLifecycleOrchestrator.test.ts  # Mock-HTTP orchestrator tests
 ```
 
@@ -111,13 +111,14 @@ run-full-lifecycle-acceptance.ts
 - `dryRun` mode: returns synthetic responses without HTTP calls
 - Route-specific read-back helpers; the orchestrator must still verify every phase exit authoritatively
 - Safety gates at construction: `safetyAcknowledgement` required, company allowlist enforced
-- **Does NOT**: auto-approve, simulate Board decisions, or issue DELETE on projects
+- Real Board auto-decisions are available only when the explicit synthetic Lab gate is enabled; statuses are always read back from Paperclip
+- Never issues DELETE on projects
 
 #### `RealLifecycleOrchestrator.ts`
-- Paperclip-backed 14-phase candidate under review
+- Paperclip-backed 14-phase orchestrator, independently reviewed and live-certified
 - Uses `PaperclipLifecycleAdapter` for all live operations
 - Constructor gate: `LIVECLI_ORCHESTRATOR_ENABLED=true` plus a `dryRun: false` adapter
-- CLI remains unconditionally blocked even when that environment variable is set
+- CLI requires the constructor gate plus all explicit Lab-only arming gates
 - Requires `PaperclipLifecycleAdapter` with `dryRun: false`
 - Bounded Board polling: 60 attempts × 5s = 5 minutes max per approval/interaction gate
 - **CAPABILITY_BLOCKER**: phases 3, 6, and 11 fail with precise blockers if Board doesn't respond in time
@@ -284,13 +285,8 @@ The `RealLifecycleOrchestrator` uses `PaperclipLifecycleAdapter` for live Paperc
 The orchestrator is **fail-closed** by default. To enable live execution:
 
 ```bash
-# BEFORE running, set in parent environment:
-export LIVECLI_ORCHESTRATOR_ENABLED=true
-
-# Then run with --live (requires --safety-acknowledgement and valid --paperclip-url):
-node scripts/run-full-lifecycle-acceptance.ts --live \
-  --paperclip-url=http://127.0.0.1:3111 \
-  --safety-acknowledgement
+# Then run the exact Lab-only three-project command:
+LIVECLI_ORCHESTRATOR_ENABLED=true pnpm acceptance:mmf-lifecycle:live
 ```
 
 The `LIVE_ACTIVATION_GATE` constant is checked at **construction time**, before any HTTP call is made. This prevents `--live` from ever reaching the network without explicit parent enablement.
@@ -321,25 +317,23 @@ Project cleanup always uses `PATCH /api/projects/{id}` with `{ archivedAt: <time
 ## Testing
 
 ```bash
-cd /tmp/mmf-lifecycle-harness-approved/apps/studio-web
+cd /Users/christophersilvestri/Code/conversion-alchemy/mmf-studio-paperclip
 
-# Run lifecycle unit tests (vitest)
-npx vitest run scripts/lifecycle/lifecycle.test.ts
-npx vitest run scripts/lifecycle/paperclipAdapter.test.ts
-npx vitest run scripts/lifecycle/RealLifecycleOrchestrator.test.ts
+# Run lifecycle unit tests (136 tests)
+pnpm acceptance:mmf-lifecycle:test
 
 # Dry-run acceptance harness (3 projects)
-npm run acceptance:lifecycle:repeat3
+pnpm acceptance:mmf-lifecycle:repeat3
 
 # Single dry-run
-npm run acceptance:lifecycle:dry-run
+pnpm acceptance:mmf-lifecycle:dry-run
 
 # Live-mode preflight (GET-only route inventory)
-npm run acceptance:lifecycle:preflight
+pnpm acceptance:mmf-lifecycle:preflight
 
-# Prove --live fails closed
-node scripts/run-full-lifecycle-acceptance.ts --live
-# Expected: exits 1, no mutations attempted
+# Unarmed live attempts fail closed; the package script omits the required env gate
+pnpm acceptance:mmf-lifecycle:live
+# Expected: exits 1 before mutation
 ```
 
 ---
@@ -380,35 +374,18 @@ The bootstrap acceptance is a subset. Full lifecycle promotion requires 3 consec
 
 ---
 
-## What Remains Before a Live Lab Run
+## Live Certification
 
-The `RealLifecycleOrchestrator` is implemented but **not yet verified in a live Lab context**. The following must be completed before `--live` can be safely executed against `MMF Studio Lab`:
+The real Lab path was independently reviewed and exercised against `MMF Studio Lab` on 2026-07-13.
 
-### Known Blockers
+- Certification run: `live-20260713132718`
+- Three consecutive disposable projects completed all 14 phases
+- Projects archived non-destructively; audit history preserved
+- Temporary specialists terminated before each orchestrator
+- Permanent `MMF Studio Director` retained and restored to `idle`
+- Watchdogs removed
+- Late heartbeat runs cancelled and polled terminal
+- Three consecutive terminal-state snapshots required at closure
+- Zero active runs, pending approvals, pending interactions, or non-terminal project issues after delayed API verification
 
-1. **Board approval polling semantics**: The orchestrator polls `GET /api/approvals/{id}` until status is `approved`. If the Board uses a different status field (e.g., `state` instead of `status`), polling will never see `approved` and always timeout with `CAPABILITY_BLOCKER: board_timeout`. **Real Lab testing required.**
-
-2. **Board interaction polling semantics**: The orchestrator polls `GET /api/issues/{id}/interactions` for status=`completed`. If interaction completion uses a different field or mechanism, polling will never resolve. **Real Lab testing required.**
-
-3. **trustedTemplateHire response shape**: The `createAgentHire` call returns an object with `id`. The orchestrator reads `agent.id` as the new agent ID, then calls `getAgent(agentId)` to verify. If the response shape differs (e.g., `agentId` vs `id`), the agent ID will be empty and verification will fail. **Schema verification required.**
-
-4. **Director agent resolution**: Phase 1 resolves the Director by listing agents and finding one with `role === 'director'` or name containing 'director'. If MMF Studio Lab uses a different naming convention, this will fail. **Lab-specific configuration may be needed.**
-
-5. **Watchdog issue ID tracking**: The orchestrator tracks `ctx.watchdogIssueId` but never actually sets it from any API response. In Phase 14, `deleteWatchdog` is called with a null issue ID if no watchdog was tracked. **Watchdog creation/retrieval not yet wired to a real API call.**
-
-6. **Idempotency key per phase**: The orchestrator generates a disposable project name but does not yet store/comparison-check completed phases per project name for re-run recovery. If a run is interrupted, re-running may create duplicate entities. **Idempotency implementation incomplete.**
-
-7. **Real heartbeat invocation**: The orchestrator never calls `POST /api/agents/{id}/heartbeat/invoke` during the lifecycle. If agents need heartbeat invocations to stay alive during the lifecycle, they may go idle/stale. **Heartbeat integration not yet implemented.**
-
-8. **Three-independent-project without board plumbing**: The orchestrator is designed for 3 independent projects but each project needs its own Board approval cycle. If Board approval requires manual human action, 3 projects = 3 manual approvals. **No automated parallel approval flow exists yet.**
-
-### To Enable Live Mode
-
-1. Resolve all Known Blockers above with real API testing
-2. Set `LIVECLI_ORCHESTRATOR_ENABLED=true` in the parent environment
-3. Verify preflight passes for MMF Studio Lab
-4. Run a single dry-run first to confirm the adapter works
-5. Run `--live` with `--paperclip-url` pointing to the real Lab
-6. Monitor for `CAPABILITY_BLOCKER` and resolve any Board API discrepancies
-
-**Do not set `LIVECLI_ORCHESTRATOR_ENABLED=true` in CI or automated test pipelines.** That env var is a deliberate, human-reviewed gate.
+Live execution remains intentionally awkward. Do not set `LIVECLI_ORCHESTRATOR_ENABLED=true` in CI or routine automation; it is a deliberate human-reviewed gate for disposable Lab acceptance only.
