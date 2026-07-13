@@ -4,7 +4,9 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mmf_drive_brain_import import FixtureDrive, compile_brain, folder_id_from_ref, slugify
 
 
