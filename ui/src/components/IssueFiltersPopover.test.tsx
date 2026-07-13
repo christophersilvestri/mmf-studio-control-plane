@@ -1,31 +1,92 @@
 // @vitest-environment jsdom
 
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import type { ReactNode } from "react";
+import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { defaultIssueFilterState } from "../lib/issue-filters";
 import { IssueFiltersPopover } from "./IssueFiltersPopover";
+import { defaultIssueFilterState } from "../lib/issue-filters";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-describe("IssueFiltersPopover project lifecycle filtering", () => {
+vi.mock("@/components/ui/popover", () => ({
+  Popover: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  PopoverTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
+  PopoverContent: ({ children, className }: { children: ReactNode; className?: string }) => (
+    <div data-testid="popover-content" className={className}>
+      {children}
+    </div>
+  ),
+}));
+
+vi.mock("@/components/ui/button", () => ({
+  Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+    <button type="button" {...props}>
+      {children}
+    </button>
+  ),
+}));
+
+vi.mock("@/components/ui/checkbox", () => ({
+  Checkbox: ({ checked }: { checked?: boolean }) => <input type="checkbox" checked={checked} readOnly />,
+}));
+
+vi.mock("./StatusIcon", () => ({
+  StatusIcon: ({ status }: { status: string }) => <span>{status}</span>,
+}));
+
+vi.mock("./PriorityIcon", () => ({
+  PriorityIcon: ({ priority }: { priority: string }) => <span>{priority}</span>,
+}));
+
+describe("IssueFiltersPopover", () => {
   let container: HTMLDivElement;
-  let root: Root;
 
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
-    root = createRoot(container);
   });
 
-  afterEach(async () => {
-    await act(() => root.unmount());
-    container.remove();
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("uses a scrollable popover and a three-column desktop grid", () => {
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <IssueFiltersPopover
+          state={defaultIssueFilterState}
+          onChange={vi.fn()}
+          activeFilterCount={0}
+          agents={[{ id: "agent-1", name: "Agent One" }]}
+          projects={[{ id: "project-1", name: "Project One" }]}
+          labels={[{ id: "label-1", name: "Bug", color: "#ff0000" }]}
+          workspaces={[{ id: "workspace-1", name: "Workspace One" }]}
+          enableRoutineVisibilityFilter
+        />,
+      );
+    });
+
+    const popoverContent = container.querySelector("[data-testid='popover-content']");
+    expect(popoverContent).not.toBeNull();
+    expect(popoverContent?.className).toContain("overflow-y-auto");
+    expect(popoverContent?.className).toContain("max-h-(--sz-calc-9)");
+
+    const layoutGrid = Array.from(popoverContent?.querySelectorAll("div") ?? []).find((element) =>
+      element.className.includes("md:grid-cols-3"),
+    );
+    expect(layoutGrid?.className).toContain("grid-cols-1");
+    expect(popoverContent?.textContent).toContain("Live runs only");
   });
 
   it("hides archived projects and clears an archived project selection", async () => {
+    const root = createRoot(container);
     const onChange = vi.fn();
-    await act(async () => {
+
+    act(() => {
       root.render(
         <IssueFiltersPopover
           state={{ ...defaultIssueFilterState, projects: ["archived-project"] }}
@@ -42,14 +103,7 @@ describe("IssueFiltersPopover project lifecycle filtering", () => {
     await vi.waitFor(() => {
       expect(onChange).toHaveBeenCalledWith({ projects: [] });
     });
-
-    const trigger = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Filters"));
-    expect(trigger).toBeTruthy();
-    await act(async () => trigger?.click());
-
-    await vi.waitFor(() => {
-      expect(document.body.textContent).toContain("Active Project");
-    });
-    expect(document.body.textContent).not.toContain("Archived Project");
+    expect(container.textContent).toContain("Active Project");
+    expect(container.textContent).not.toContain("Archived Project");
   });
 });
